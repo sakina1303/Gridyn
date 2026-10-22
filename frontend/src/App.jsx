@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { api, post } from './api/client.js'
+import Landing from './Landing.jsx'
 
 const tabs = [
   ['home', 'Overview'], ['site', 'Site setup'], ['readiness', 'Data readiness'],
@@ -58,6 +59,7 @@ function LinePlot({ series, labels }) {
 }
 
 export default function App() {
+  const [showWorkspace, setShowWorkspace] = useState(() => window.location.hash === '#workspace')
   const [tab, setTab] = useState('home')
   const [site, setSite] = useState(null)
   const [dataset, setDataset] = useState(null)
@@ -92,6 +94,28 @@ export default function App() {
   const [exportCredit, setExportCredit] = useState('')
   const [scenarioLimit, setScenarioLimit] = useState(200)
   const [scenarioBatteryLimit, setScenarioBatteryLimit] = useState('')
+
+  useEffect(() => {
+    const syncView = () => setShowWorkspace(window.location.hash === '#workspace')
+    window.addEventListener('hashchange', syncView)
+    window.addEventListener('popstate', syncView)
+    return () => {
+      window.removeEventListener('hashchange', syncView)
+      window.removeEventListener('popstate', syncView)
+    }
+  }, [])
+
+  function openWorkspace() {
+    window.location.hash = 'workspace'
+    setShowWorkspace(true)
+    window.scrollTo({ top: 0 })
+  }
+
+  function openSite() {
+    window.history.pushState(null, '', window.location.pathname + window.location.search)
+    setShowWorkspace(false)
+    window.scrollTo({ top: 0 })
+  }
 
   useEffect(() => {
     let active = true
@@ -323,13 +347,15 @@ export default function App() {
   const operationalPass = assessment?.passes?.find(item => item.mode === 'operational')
   const latestExperimentCases = experiment?.runs?.flatMap(run => run.results || []) || []
 
+  if (!showWorkspace) return <Landing onOpenWorkspace={openWorkspace} />
+
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark" aria-hidden="true"><span /><span /><span /></div><div><strong>FLEXGRID</strong><small>Research prototype</small></div></div>
       <div className="side-label">WORKSPACE / 01</div>
       <nav aria-label="Primary sections">{tabs.map(([id, label], index) => <button key={id}
         className={tab === id ? 'active' : ''} onClick={() => setTab(id)} aria-current={tab === id ? 'page' : undefined}><span className="nav-number">{String(index + 1).padStart(2, '0')}</span><span>{label}</span><b aria-hidden="true">↗</b></button>)}</nav>
-      <div className="sidebar-footer"><button className={tab === 'settings' ? 'footer-link active' : 'footer-link'} onClick={() => setTab('settings')}>Settings <span>↗</span></button><div className="research-status"><span className="status-dot" /> Research status <strong>Advisory · local</strong><small>No equipment control</small></div></div>
+      <div className="sidebar-footer"><button className="footer-link" onClick={openSite}>Back to site <span>↗</span></button><button className={tab === 'settings' ? 'footer-link active' : 'footer-link'} onClick={() => setTab('settings')}>Settings <span>↗</span></button><div className="research-status"><span className="status-dot" /> Research status <strong>Advisory · local</strong><small>No equipment control</small></div></div>
     </aside>
     <main className="main">
       <header className="topbar"><div className="top-identity"><span className="eyebrow">FLEXGRID <span className="crumb">/</span> RESEARCH PROTOTYPE</span><h1>{titles[tab] || 'Settings'}</h1><p>Simulation-first advisory research workspace</p></div>

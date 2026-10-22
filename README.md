@@ -4,7 +4,7 @@ The project name is undecided. This is an **advisory, simulation-first research 
 
 ## Current status
 
-The **local synthetic research app is runnable**. It includes the canonical 15-minute simulator, seeded truth and observation generation, CSV normalization and claim-specific readiness, B0/B1 baselines, simple and tree forecasts, a joint Pyomo/HiGHS sustained-response envelope, a validated cost/peak/solar-use MILP, paired stress and missing-data studies, a JSON experiment runner, a local SQLite-backed FastAPI service, a React interface, and a traceable Markdown/JSON report.
+The **local synthetic research app is runnable**. It includes the canonical 15-minute simulator, seeded truth and observation generation, CSV normalization and claim-specific readiness, B0/B1 baselines, simple and tree forecasts, a joint Pyomo/HiGHS sustained-response envelope, a validated cost/peak/solar-use MILP, paired stress and missing-data studies, a JSON experiment runner, a local SQLite-backed FastAPI service, a React interface, and a traceable Markdown/JSON report. The root page is a concise introduction with a four-step interactive product journey; `/#workspace` opens the research workspace in the same React app.
 
 The app is advisory. It does not perform physical control. The flexibility view is explicitly a perfect-information synthetic oracle; tested reliability remains unknown without calibrated held-out evidence. Observed CSV data can be checked for readiness and forecasted, but an observed-only dataset is not passed to the hidden-truth optimizer. The B0/B1 heuristics can report infeasibility under ramp or grid constraints rather than search for an alternative. The FlexGrid workspace includes site, EV, pump, and HVAC setup, a signal inventory, validated results, scenario comparison, and a traceable report. B1 and uncertainty-aware scenario results remain visibly unavailable where the API does not expose them. Long-running jobs currently execute synchronously in the local service. Real-site pilot access control, calibrated probability claims, a broader experiment matrix, and independent operator validation remain future work.
 
@@ -26,7 +26,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open `http://127.0.0.1:5173/`. The API binds to loopback only; Vite proxies `/v1` to port 8765. After `pnpm build`, FastAPI also serves the built client at `http://127.0.0.1:8765/`, so the Vite server is optional for normal use. Generated local metadata and experiment artifacts are under `.local/` and ignored by Git.
+Open `http://127.0.0.1:5173/` for the introduction, then select **Open workspace**. The API binds to loopback only; Vite proxies `/v1` to port 8765. After `pnpm build`, FastAPI also serves the built client at `http://127.0.0.1:8765/`, so the Vite server is optional for normal use. Generated local metadata and experiment artifacts are under `.local/` and ignored by Git.
 
 ## Run the tests
 
