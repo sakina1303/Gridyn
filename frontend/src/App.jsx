@@ -2,11 +2,16 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { api, post } from './api/client.js'
 
 const tabs = [
-  ['site', 'Site setup'], ['readiness', 'Data readiness'], ['overview', 'Energy overview'],
-  ['flexibility', 'Flexibility'], ['forecasts', 'Forecasts'], ['optimization', 'Optimization'],
-  ['recommendations', 'Recommendations'], ['scenarios', 'Scenario lab'],
+  ['home', 'Overview'], ['site', 'Site setup'], ['readiness', 'Data readiness'],
+  ['overview', 'Energy overview'], ['flexibility', 'Flexibility'], ['forecasts', 'Forecasts'],
+  ['optimization', 'Optimization'], ['scenarios', 'Scenario lab'],
   ['experiments', 'Experiments'], ['report', 'Research report'],
 ]
+
+const titles = Object.fromEntries(tabs)
+const sourceLabel = value => value ? 'Synthetic' : 'Observed'
+const shortId = value => value ? `${value.slice(0, 8)}…` : 'No run'
+const titleCase = value => value?.replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase()) || 'Unknown'
 
 function fmt(value, digits = 2) {
   return value == null || Number.isNaN(Number(value)) ? '—' : Number(value).toFixed(digits)
@@ -18,6 +23,14 @@ function Notice({ children, tone = 'info' }) {
 
 function Metric({ label, value, unit, note }) {
   return <div className="metric"><span>{label}</span><strong>{value}{unit && <small> {unit}</small>}</strong>{note && <em>{note}</em>}</div>
+}
+
+function Status({ children, tone = 'muted' }) {
+  return <span className={`status status-${tone}`}><i aria-hidden="true" />{children}</span>
+}
+
+function EvidenceRow({ label, status, detail, tone = 'muted' }) {
+  return <div className="evidence-row"><div><strong>{label}</strong><small>{detail}</small></div><Status tone={tone}>{status}</Status></div>
 }
 
 function Panel({ eyebrow, title, children, aside }) {
@@ -45,9 +58,11 @@ function LinePlot({ series, labels }) {
 }
 
 export default function App() {
-  const [tab, setTab] = useState('site')
+  const [tab, setTab] = useState('home')
   const [site, setSite] = useState(null)
   const [dataset, setDataset] = useState(null)
+  const [apiOnline, setApiOnline] = useState(null)
+  const [scenarioLabel, setScenarioLabel] = useState('Not selected')
   const [quality, setQuality] = useState(null)
   const [observations, setObservations] = useState([])
   const [assessment, setAssessment] = useState(null)
@@ -56,6 +71,9 @@ export default function App() {
   const [recommendation, setRecommendation] = useState(null)
   const [scenario, setScenario] = useState(null)
   const [experiment, setExperiment] = useState(null)
+  const [report, setReport] = useState(null)
+  const [latestRunId, setLatestRunId] = useState(null)
+  const [latestVisibleRunId, setLatestVisibleRunId] = useState(null)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [siteForm, setSiteForm] = useState({ name: 'Synthetic campus', timezone: 'Asia/Kolkata',
@@ -73,14 +91,46 @@ export default function App() {
   const [importRate, setImportRate] = useState('')
   const [exportCredit, setExportCredit] = useState('')
   const [scenarioLimit, setScenarioLimit] = useState(200)
+  const [scenarioBatteryLimit, setScenarioBatteryLimit] = useState('')
 
   useEffect(() => {
-    api('/v1/sites').then(result => {
+    let active = true
+    Promise.all([api('/v1/health'), api('/v1/sites')]).then(async ([, result]) => {
+      if (!active) return
+      setApiOnline(true)
       const saved = localStorage.getItem('energy_lab_site_id')
       const found = result.sites.find(item => item.site_id === saved) || result.sites.at(-1)
-      if (found) setSite(found)
-    }).catch(() => {})
+      if (found) {
+        setSite(found)
+        setScenarioLimit(found.config.grid.import_limit_kw)
+      }
+      const savedDataset = localStorage.getItem('energy_lab_dataset_id')
+      if (found && savedDataset) {
+        try {
+          const meta = await api(`/v1/datasets/${savedDataset}`)
+          if (meta.site_id === found.site_id && active) {
+            setDataset(meta)
+            setScenarioLabel(localStorage.getItem('energy_lab_scenario_label') || 'Not selected')
+            const observed = await api(`/v1/datasets/${savedDataset}/observations`)
+            if (active) setObservations(observed.records)
+          }
+        } catch {
+          localStorage.removeItem('energy_lab_dataset_id')
+        }
+      }
+    }).catch(() => { if (active) setApiOnline(false) })
+    return () => { active = false }
   }, [])
+
+  useEffect(() => {
+    const runId = latestRunId || optimization?.run_id || assessment?.run_id
+    if (tab !== 'report' || !runId) return
+    let active = true
+    setReport(null)
+    api(`/v1/reports/${runId}`).then(value => { if (active) setReport(value) })
+      .catch(() => { if (active) setReport(null) })
+    return () => { active = false }
+  }, [tab, latestRunId, optimization?.run_id, assessment?.run_id])
 
   async function run(label, task) {
     setBusy(label); setError('')
@@ -119,7 +169,13 @@ export default function App() {
       }
       const created = await post('/v1/sites', payload)
       setSite(created); localStorage.setItem('energy_lab_site_id', created.site_id)
+      setScenarioLimit(created.config.grid.import_limit_kw)
+      setScenarioBatteryLimit('')
+      localStorage.removeItem('energy_lab_dataset_id')
+      localStorage.removeItem('energy_lab_scenario_label')
       setDataset(null); setQuality(null); setObservations([]); setAssessment(null); setOptimization(null)
+      setForecast(null); setRecommendation(null); setScenario(null); setReport(null); setLatestRunId(null); setLatestVisibleRunId(null)
+      setScenarioLabel('Not selected')
       setTab('readiness')
     })
   }
@@ -132,6 +188,11 @@ export default function App() {
         weather_scenario: datasetForm.weather, load_scenario: datasetForm.load,
       })
       setDataset(created); setQuality(null); setAssessment(null); setOptimization(null)
+      setForecast(null); setRecommendation(null); setScenario(null); setReport(null); setLatestRunId(null); setLatestVisibleRunId(null)
+      const label = `${titleCase(datasetForm.weather)} PV / ${titleCase(datasetForm.load)} load`
+      setScenarioLabel(label)
+      localStorage.setItem('energy_lab_scenario_label', label)
+      localStorage.setItem('energy_lab_dataset_id', created.dataset_id)
       const observed = await api(`/v1/datasets/${created.dataset_id}/observations`)
       setObservations(observed.records)
     })
@@ -146,6 +207,10 @@ export default function App() {
       const created = await api(`/v1/sites/${siteId}/datasets`, { method: 'POST', body: form })
       const meta = await api(`/v1/datasets/${created.dataset_id}`)
       setDataset(meta); setQuality(null); setAssessment(null); setOptimization(null)
+      setForecast(null); setRecommendation(null); setScenario(null); setReport(null); setLatestRunId(null); setLatestVisibleRunId(null)
+      setScenarioLabel('Observed dataset')
+      localStorage.setItem('energy_lab_scenario_label', 'Observed dataset')
+      localStorage.setItem('energy_lab_dataset_id', created.dataset_id)
       const observed = await api(`/v1/datasets/${created.dataset_id}/observations`)
       setObservations(observed.records)
     })
@@ -167,6 +232,8 @@ export default function App() {
         duration_intervals: Number(assessmentForm.duration), direction: assessmentForm.direction,
       })
       setAssessment(await api(`/v1/runs/${response.run_id}`))
+      setLatestRunId(response.run_id)
+      setLatestVisibleRunId(response.run_id)
     })
   }
 
@@ -191,8 +258,11 @@ export default function App() {
         body.export_credit_inr_per_kwh = Array(count).fill(Number(exportCredit))
       }
       const response = await post(`/v1/sites/${siteId}/optimization-runs`, body)
-      setOptimization(await api(`/v1/runs/${response.run_id}`))
-      setRecommendation(null)
+      const completed = await api(`/v1/runs/${response.run_id}`)
+      setOptimization(completed)
+      setLatestRunId(response.run_id)
+      setLatestVisibleRunId(response.run_id)
+      setRecommendation(completed.status === 'succeeded' ? await api(`/v1/recommendations?run_id=${response.run_id}`) : null)
     })
   }
 
@@ -206,9 +276,13 @@ export default function App() {
   async function compareScenario() {
     if (!siteId || !datasetId) return
     await run('Comparing scenario', async () => {
-      const created = await post(`/v1/sites/${siteId}/scenarios`, {
-        dataset_id: datasetId, grid_import_limit_kw: Number(scenarioLimit) })
-      setScenario(await post(`/v1/sites/${siteId}/scenarios/${created.scenario_id}/compare`, {}))
+      const change = { dataset_id: datasetId, grid_import_limit_kw: Number(scenarioLimit) }
+      if (scenarioBatteryLimit !== '') change.battery_max_discharge_kw = Number(scenarioBatteryLimit)
+      const created = await post(`/v1/sites/${siteId}/scenarios`, change)
+      const result = await post(`/v1/sites/${siteId}/scenarios/${created.scenario_id}/compare`, {})
+      setScenario(result)
+      setLatestVisibleRunId(result.run_id)
+      setScenarioLabel(`Grid cap ${scenarioLimit} kW${scenarioBatteryLimit === '' ? '' : ` / battery ${scenarioBatteryLimit} kW`}`)
     })
   }
 
@@ -225,26 +299,58 @@ export default function App() {
   const critical = (recordsByQuantity.critical_load_kw || []).map(row => row.value)
   const fixed = (recordsByQuantity.fixed_load_kw || []).map(row => row.value)
   const chartSeries = [
-    { name: 'PV available', color: '#49a980', values: pv },
-    { name: 'Critical demand', color: '#f5aa58', values: critical },
-    { name: 'Fixed demand', color: '#79a7e7', values: fixed },
+    { name: 'PV available', color: '#b8c9b9', values: pv },
+    { name: 'Critical demand', color: '#baaa88', values: critical },
+    { name: 'Fixed demand', color: '#80a7a2', values: fixed },
   ].filter(item => item.values.length)
+  const currentRun = optimization?.run_id === latestRunId ? optimization
+    : assessment?.run_id === latestRunId ? assessment : optimization || assessment
+  const seriesQuality = quality?.quality?.series || []
+  const seriesFor = names => seriesQuality.find(item => names.includes(item.quantity))
+  const hasSignal = names => names.some(name => (recordsByQuantity[name] || []).length > 0)
+  const inventory = [
+    ['Site import', ['grid_import_kw']], ['PV', ['pv_available_kw', 'pv_used_kw']],
+    ['Critical + fixed load', ['critical_load_kw', 'fixed_load_kw']],
+    ['Battery SOC', ['battery_soc_kwh']], ['EV', ['ev_power_kw']],
+    ['Pump', ['pump_power_kw']], ['HVAC', ['hvac_power_kw']],
+    ['Tariff', []],
+  ]
+  const configuredAssets = site ? [
+    site.config.pv?.ac_capacity_kw > 0 && 'PV', site.config.battery && 'Battery',
+    site.config.evs?.length && 'EV', site.config.pumps?.length && 'Pump',
+    site.config.hvacs?.length && 'HVAC',
+  ].filter(Boolean) : []
+  const operationalPass = assessment?.passes?.find(item => item.mode === 'operational')
+  const latestExperimentCases = experiment?.runs?.flatMap(run => run.results || []) || []
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><div className="brand-mark">◈</div><div><strong>ENERGY LAB</strong><small>Research workspace</small></div></div>
-      <div className="side-label">WORKSPACE</div>
+      <div className="brand"><div className="brand-mark" aria-hidden="true"><span /><span /><span /></div><div><strong>FLEXGRID</strong><small>Research prototype</small></div></div>
+      <div className="side-label">WORKSPACE / 01</div>
       <nav aria-label="Primary sections">{tabs.map(([id, label], index) => <button key={id}
-        className={tab === id ? 'active' : ''} onClick={() => setTab(id)}><span className="nav-number">{String(index + 1).padStart(2, '0')}</span>{label}</button>)}</nav>
-      <div className="sidebar-footer"><span className="status-dot" /> Advisory simulation<br /><small>No equipment control</small></div>
+        className={tab === id ? 'active' : ''} onClick={() => setTab(id)} aria-current={tab === id ? 'page' : undefined}><span className="nav-number">{String(index + 1).padStart(2, '0')}</span><span>{label}</span><b aria-hidden="true">↗</b></button>)}</nav>
+      <div className="sidebar-footer"><button className={tab === 'settings' ? 'footer-link active' : 'footer-link'} onClick={() => setTab('settings')}>Settings <span>↗</span></button><div className="research-status"><span className="status-dot" /> Research status <strong>Advisory · local</strong><small>No equipment control</small></div></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><span className="eyebrow">SIMULATION-FIRST RESEARCH PROTOTYPE</span><h1>{tabs.find(item => item[0] === tab)?.[1]}</h1></div>
-        <div className="top-actions">{dataset && <span className={`pill ${synthetic ? 'synthetic' : ''}`}>{synthetic ? 'SIMULATION DATA' : 'OBSERVED DATA'}</span>}
-          {site && <span className="site-chip">{site.name}</span>}</div></header>
+      <header className="topbar"><div className="top-identity"><span className="eyebrow">FLEXGRID <span className="crumb">/</span> RESEARCH PROTOTYPE</span><h1>{titles[tab] || 'Settings'}</h1><p>Simulation-first advisory research workspace</p></div>
+        <div className="top-actions"><Status tone={apiOnline ? 'ok' : apiOnline === false ? 'bad' : 'muted'}>{apiOnline ? latestVisibleRunId ? 'Run available' : 'Simulation not run' : apiOnline === false ? 'API unavailable' : 'Checking service'}</Status><span className={`pill ${synthetic ? 'synthetic' : ''}`}>{dataset ? `${sourceLabel(synthetic)} data` : 'No dataset'}</span></div></header>
       {error && <Notice tone="error"><strong>Could not complete the step.</strong> {error}</Notice>}
       {busy && <Notice tone="info"><span className="spinner" /> {busy}…</Notice>}
       <div className="content">
+        <div className="context-strip"><div><span>ACTIVE SITE</span><strong>{site?.name || 'Not configured'}</strong></div><div><span>DATASET</span><strong>{dataset ? shortId(datasetId) : 'Not selected'}</strong></div><div><span>CURRENT SCENARIO</span><strong>{scenarioLabel}</strong></div><div><span>LATEST RUN</span><strong title={latestVisibleRunId || ''}>{shortId(latestVisibleRunId)}</strong></div></div>
+        {tab === 'home' && <>
+          <div className="page-intro"><div><p className="eyebrow">RESEARCH WORKSPACE / OVERVIEW</p><h2>From site evidence to validated response.</h2><p>Inspect what the model knows, run controlled synthetic studies, and keep every conclusion tied to a dataset and run.</p></div><button className="secondary" onClick={() => setTab(site ? 'readiness' : 'site')}>{site ? 'Open data readiness' : 'Configure a site'} <span>↗</span></button></div>
+          <div className="overview-grid">
+            <Panel eyebrow="SITE / MODEL" title="Site status" aside={<Status tone={site ? 'ok' : 'muted'}>{site ? 'Configured' : 'Not configured'}</Status>}><div className="overview-value">{site?.name || 'No site selected'}</div><p className="subtle">{site ? `${site.config.timezone} · ${configuredAssets.length ? configuredAssets.join(', ') : 'No flexible assets configured'}` : 'Define grid limits, PV, and optional flexible assets to begin.'}</p></Panel>
+            <Panel eyebrow="EVIDENCE / DATA" title="Data readiness" aside={<Status tone={quality ? 'ok' : 'muted'}>{quality ? 'Assessed' : 'Not assessed'}</Status>}><div className="overview-value">{dataset ? `${sourceLabel(synthetic)} dataset` : 'No dataset'}</div><p className="subtle">{dataset ? `${dataset.interval_minutes} minute intervals · ${quality ? `${qualityIssues.length} recorded quality issues` : 'quality not assessed'}` : 'Generate a synthetic study or import observed CSV.'}</p></Panel>
+            <Panel eyebrow="ASSETS / CONFIGURATION" title="Available assets"><div className="asset-list">{configuredAssets.length ? configuredAssets.map(item => <span className="asset-chip" key={item}>{item}</span>) : <span className="empty-inline">No configured assets</span>}</div><p className="subtle">Configuration is a declared model boundary, not evidence of delivered flexibility.</p></Panel>
+            <Panel eyebrow="REFERENCE / B0" title="Current baseline"><div className="overview-value">{recommendation?.baseline_peak_kw == null ? 'No result available' : <>{fmt(recommendation.baseline_peak_kw)} <small>kW peak</small></>}</div><p className="subtle">B0: earliest declared EV and pump service, minimum HVAC power, battery idle.</p></Panel>
+            <Panel eyebrow="JOINT RESPONSE" title="Flexibility envelope"><div className="overview-value">{operationalPass?.sustained_kw == null ? 'Simulation not run' : <>{fmt(operationalPass.sustained_kw)} <small>kW {assessment.direction}</small></>}</div><p className="subtle">{assessment ? `${assessment.duration_intervals} × 15 minute response · ${titleCase(assessment.status)}` : 'The operational response is calculated over response and recovery.'}</p></Panel>
+            <Panel eyebrow="EVIDENCE / RELIABILITY" title="Reliability status"><div className="overview-value">Unknown</div><p className="subtle">No calibrated held-out reliability evidence is attached to this workspace.</p></Panel>
+          </div>
+          <Panel eyebrow="LATEST STUDY" title="Experiment trace" aside={<button className="text-button" onClick={() => setTab('experiments')}>Open experiments ↗</button>}><div className="trace-row"><div><span className="eyebrow">PROTOCOL</span><strong>{experiment?.protocol_id || 'No experiment run'}</strong></div><div><span className="eyebrow">CASES</span><strong>{experiment ? latestExperimentCases.length : '—'}</strong></div><div><span className="eyebrow">STATUS</span><strong>{experiment ? titleCase(experiment.status) : 'No result available'}</strong></div></div></Panel>
+          {optimization && <Panel eyebrow="DECISION / ADVISORY" title="Research recommendation" aside={<button className="text-button" onClick={loadRecommendation} disabled={!!busy}>Refresh evidence ↗</button>}><p className="intro">Derived from an independently validated run. No controls are sent to equipment.</p>{recommendation ? <div className="detail-grid"><div><span>STATUS</span><strong>{titleCase(recommendation.status)}</strong></div><div><span>SIMULATED PEAK CHANGE</span><strong>{recommendation.simulated_peak_reduction_kw == null ? 'No result available' : `${fmt(recommendation.simulated_peak_reduction_kw)} kW`}</strong></div><div><span>RELIABILITY</span><strong>{titleCase(recommendation.reliability)}</strong></div></div> : <button className="secondary" onClick={loadRecommendation} disabled={!!busy}>Inspect recommendation</button>}</Panel>}
+        </>}
         {tab === 'site' && <>
           <Panel eyebrow="01 / MODEL BOUNDARY" title="Define the site" aside={<span className="tag">Units are explicit</span>}>
             <p className="intro">Create a local advisory model for one site. The project name is still provisional; this name labels your site only.</p>
@@ -286,6 +392,16 @@ export default function App() {
                 <div className="subpanel"><h3>Import observed CSV</h3><p>Readings are normalized to UTC and canonical kW/kWh before quality checks. Files remain in this local workspace.</p><label className="upload-resolution">Declared interval<select value={csvResolution} onChange={e => setCsvResolution(e.target.value)}><option value="15">15 min</option><option value="30">30 min</option><option value="60">60 min</option></select></label><label className="upload">Choose CSV<input type="file" accept=".csv,text/csv" onChange={uploadCsv} disabled={!!busy} /></label></div></div></>}
           </Panel>
           {dataset && <Panel eyebrow="SELECTED DATASET" title={synthetic ? 'Synthetic research data' : 'Observed site data'}><div className="metric-row"><Metric label="Resolution" value={dataset.interval_minutes} unit="min" /><Metric label="Starts" value={dataset.start_utc?.slice(0, 16)} /><Metric label="Records" value={observations.length} /></div><div className="actions"><button className="primary" onClick={validateData} disabled={!!busy}>Assess readiness</button></div></Panel>}
+          <Panel eyebrow="SIGNAL INVENTORY" title="What the model actually has" aside={<Status tone={dataset ? 'ok' : 'muted'}>{dataset ? `${sourceLabel(synthetic)} source` : 'No dataset'}</Status>}>
+            <p className="intro">A configured asset does not imply that its telemetry was observed. Availability below reflects the selected dataset only.</p>
+            <div className="evidence-grid">{inventory.map(([label, names]) => {
+              const present = hasSignal(names)
+              const series = seriesFor(names)
+              const detail = names.length ? series ? `${fmt(series.coverage * 100, 0)}% coverage · ${series.missing_count} missing intervals` : present ? 'Available · assess readiness for coverage' : 'No corresponding data series' : 'No verified tariff attached'
+              return <EvidenceRow key={label} label={label} detail={detail} status={present ? sourceLabel(synthetic) : 'Unknown'} tone={present ? synthetic ? 'synthetic' : 'ok' : 'muted'} />
+            })}</div>
+            <p className="footnote">Inferred signals: none in this inventory. Missing signals remain Unknown.</p>
+          </Panel>
           {quality && <Panel eyebrow="CLAIM READINESS" title="What this data supports"><div className="claim-list">{qualityClaims.map(item => <div className="claim" key={item.claim}><span className={`state ${item.state}`}>{item.state.replaceAll('_', ' ')}</span><div><strong>{item.claim.replaceAll('_', ' ')}</strong><p>{item.explanation}</p>{item.next_measurement && <small>Next measurement: {item.next_measurement}</small>}</div></div>)}</div><p className="footnote">{qualityIssues.length} quality issue{qualityIssues.length === 1 ? '' : 's'} recorded. Raw values are retained.</p></Panel>}
         </>}
         {tab === 'overview' && <Panel eyebrow="03 / PHYSICAL SERIES" title="Energy overview" aside={<span className="tag">Average kW per interval</span>}>
@@ -295,7 +411,12 @@ export default function App() {
           <Panel eyebrow="04 / JOINT RESPONSE" title="Sustained flexibility envelope"><p className="intro">The current assessment is a <strong>perfect-information synthetic oracle</strong>. It solves one joint schedule over the response and recovery horizon. Tested reliability remains unknown.</p>
             {!synthetic ? <Notice>Select a synthetic dataset to run this oracle assessment. Observed-only data is not treated as hidden truth.</Notice> : <div className="form-grid compact"><label>Start interval<input type="number" min="0" value={assessmentForm.start} onChange={e => setAssessmentForm({ ...assessmentForm, start: e.target.value })} /></label><label>Duration · intervals<input type="number" min="1" value={assessmentForm.duration} onChange={e => setAssessmentForm({ ...assessmentForm, duration: e.target.value })} /></label><label>Direction<select value={assessmentForm.direction} onChange={e => setAssessmentForm({ ...assessmentForm, direction: e.target.value })}><option value="down">Down · reduce grid import</option><option value="up">Up · increase grid import</option></select></label><button className="primary" onClick={assess} disabled={!!busy}>Assess response</button></div>}
           </Panel>
-          {assessment && <Panel eyebrow="ASSESSMENT RESULT" title={assessment.status === 'succeeded' ? 'Feasible response' : 'No validated response'}><div className="metric-row">{(assessment.passes || []).map(item => <Metric key={item.mode} label={item.mode} value={fmt(item.sustained_kw)} unit="kW" note={item.status} />)}<Metric label="Tested reliable" value="Unknown" note="No calibrated held-out evidence" /></div>{assessment.reason && <Notice tone="error">{assessment.reason}</Notice>}<p className="footnote">Method: {assessment.method}. Recovery import delta: {fmt(assessment.recovery_import_delta_kwh)} kWh.</p></Panel>}
+          {assessment && <Panel eyebrow="ASSESSMENT RESULT" title={assessment.status === 'succeeded' ? 'Feasible response' : 'No validated response'} aside={<Status tone={assessment.status === 'succeeded' ? 'ok' : 'bad'}>{titleCase(assessment.status)}</Status>}>
+            <div className="metric-row"><Metric label="Baseline / B0" value={recommendation?.baseline_peak_kw == null ? 'No result available' : fmt(recommendation.baseline_peak_kw)} unit={recommendation?.baseline_peak_kw == null ? null : 'kW peak'} /><Metric label="Downward flexibility" value={assessment.direction === 'down' ? fmt(operationalPass?.sustained_kw) : 'Not assessed'} unit={assessment.direction === 'down' ? 'kW' : null} /><Metric label="Upward flexibility" value={assessment.direction === 'up' ? fmt(operationalPass?.sustained_kw) : 'Not assessed'} unit={assessment.direction === 'up' ? 'kW' : null} /><Metric label="Duration" value={assessment.duration_intervals ? fmt(assessment.duration_intervals * .25, 2) : 'Unknown'} unit="h" /></div>
+            <div className="section-rule"><span>MODEL PASSES</span></div><div className="metric-row">{(assessment.passes || []).map(item => <Metric key={item.mode} label={item.mode} value={fmt(item.sustained_kw)} unit="kW" note={item.status} />)}<Metric label="Tested reliability" value="Unknown" note="No calibrated held-out evidence" /></div>
+            {assessment.reason && <Notice tone="error">{assessment.reason}</Notice>}
+            <div className="detail-grid"><div><span>RECOVERY REQUIREMENT</span><strong>{assessment.recovery_import_delta_kwh == null ? 'Unknown' : `${fmt(assessment.recovery_import_delta_kwh)} kWh import delta`}</strong></div><div><span>OPERATIONAL CONSTRAINTS</span><strong>Critical service, asset windows, grid limits, terminal SOC</strong></div><div><span>METHOD</span><strong>{assessment.method || 'Unknown'}</strong></div></div>
+          </Panel>}
         </>}
         {tab === 'forecasts' && <Panel eyebrow="05 / ISSUE-TIME CONTRACT" title="Forecasts"><p className="intro">Previous-day persistence uses only observations available by the issue time. A minimum of one preceding day at 15-minute resolution is needed for this view.</p>{!dataset ? <Notice>Select a dataset first.</Notice> : <><button className="primary" onClick={makeForecast} disabled={!!busy}>Forecast fixed load for day 2</button>{forecast && <><div className="metric-row top-gap"><Metric label="Model" value={forecast.forecast.method} /><Metric label="Training observations" value={forecast.forecast.training_count} /><Metric label="Issued" value={forecast.forecast.issued_at_utc?.slice(0, 16)} /></div><LinePlot series={[{ name: 'Forecast fixed load', color: '#79a7e7', values: forecast.forecast.values_kw }]} labels="Issued fixed-load forecast in kW" /></>}</>}</Panel>}
         {tab === 'optimization' && <>
@@ -304,12 +425,42 @@ export default function App() {
               {objective === 'cost' && <><label>Import rate · INR/kWh<input type="number" value={importRate} onChange={e => setImportRate(e.target.value)} placeholder="Enter applicable rate" /></label><label>Export credit · INR/kWh<input type="number" value={exportCredit} onChange={e => setExportCredit(e.target.value)} placeholder="Enter applicable credit" /></label></>}
               <button className="primary" onClick={optimize} disabled={!!busy}>Solve schedule</button></div>}
           </Panel>
-          {optimization && <Panel eyebrow="SOLVER RESULT" title={optimization.status === 'succeeded' ? 'Independently validated' : 'No validated schedule'}><div className="metric-row"><Metric label="Objective" value={fmt(optimization.objective_value)} unit={optimization.objective_unit} /><Metric label="Solver" value={optimization.solver_status} /><Metric label="Max balance residual" value={fmt(optimization.max_balance_residual_kw, 6)} unit="kW" /></div>{optimization.reason && <Notice tone="error">{optimization.reason}</Notice>}{optimization.grid_import_kw && <LinePlot series={[{ name: 'Grid import', color: '#79a7e7', values: optimization.grid_import_kw }, { name: 'Battery energy', color: '#49a980', values: optimization.battery_energy_kwh.filter(value => value != null) }]} labels="Validated grid import in kW and battery energy in kWh by interval" />}</Panel>}
+          {optimization && <Panel eyebrow="SOLVER RESULT" title={optimization.status === 'succeeded' ? 'Independently validated' : 'No validated schedule'} aside={<Status tone={optimization.status === 'succeeded' ? 'ok' : 'bad'}>{titleCase(optimization.status)}</Status>}>
+            <div className="metric-row"><Metric label="Objective" value={fmt(optimization.objective_value)} unit={optimization.objective_unit} /><Metric label="Solver status" value={titleCase(optimization.solver_status)} /><Metric label="Termination" value={titleCase(optimization.solver_termination)} /><Metric label="Validation" value={optimization.status === 'succeeded' ? 'Passed' : 'Not passed'} /><Metric label="Runtime" value="Unknown" note="Not returned by this API" /><Metric label="Optimality gap" value="Unknown" note="Not returned by this API" /></div>
+            <div className="detail-grid top-gap"><div><span>ACTIVE CONSTRAINTS</span><strong>Power balance · grid bounds · asset service · SOC</strong></div><div><span>MAX BALANCE RESIDUAL</span><strong>{optimization.max_balance_residual_kw == null ? 'Unknown' : `${fmt(optimization.max_balance_residual_kw, 6)} kW`}</strong></div><div><span>RUN ID</span><strong title={optimization.run_id}>{shortId(optimization.run_id)}</strong></div></div>
+            {optimization.reason && <Notice tone={optimization.status === 'succeeded' ? 'info' : 'error'}>{optimization.reason}</Notice>}
+            {optimization.grid_import_kw && <><div className="section-rule"><span>VALIDATED SCHEDULE / GRID IMPORT · kW</span></div><LinePlot series={[{ name: 'Grid import', color: '#a9c6bd', values: optimization.grid_import_kw }]} labels="Validated grid import in kilowatts by interval" />{optimization.battery_energy_kwh?.some(value => value != null) && <><div className="section-rule"><span>BATTERY ENERGY · kWh</span></div><LinePlot series={[{ name: 'Battery energy', color: '#c3aa7d', values: optimization.battery_energy_kwh.filter(value => value != null) }]} labels="Battery energy in kilowatt-hours by interval" /></>}</>}
+          </Panel>}
         </>}
         {tab === 'recommendations' && <Panel eyebrow="07 / EVIDENCE CARD" title="Recommendations"><p className="intro">This page derives facts from a validated run. It does not send controls to any asset.</p>{!optimization ? <Notice>Run optimization first.</Notice> : <><button className="primary" onClick={loadRecommendation} disabled={!!busy}>Inspect recommendation</button>{recommendation && <div className="result-card"><span className={`state ${recommendation.status === 'research_candidate' ? 'usable_with_limitations' : 'insufficient'}`}>{recommendation.status.replaceAll('_', ' ')}</span><h3>{recommendation.action || recommendation.reason}</h3>{recommendation.simulated_peak_reduction_kw != null && <div className="metric-row"><Metric label="Baseline peak" value={fmt(recommendation.baseline_peak_kw)} unit="kW" /><Metric label="Optimized peak" value={fmt(recommendation.optimized_peak_kw)} unit="kW" /><Metric label="Simulated reduction" value={fmt(recommendation.simulated_peak_reduction_kw)} unit="kW" /></div>}<p className="footnote">Reliability: {recommendation.reliability || 'unknown'} · Provenance: {recommendation.provenance || 'unavailable'} · Run: {recommendation.schedule_run_id || optimization.run_id}</p></div>}</>}</Panel>}
-        {tab === 'scenarios' && <Panel eyebrow="08 / PAIRED COMPARISON" title="Scenario lab"><p className="intro">Change a site constraint while keeping the same synthetic truth. A tighter grid limit can make the comparison infeasible; that failure remains visible.</p>{!synthetic ? <Notice>Select synthetic data first.</Notice> : <div className="form-grid compact"><label>Scenario import limit · kW<input type="number" min="0" value={scenarioLimit} onChange={e => setScenarioLimit(e.target.value)} /></label><button className="primary" onClick={compareScenario} disabled={!!busy}>Compare scenario</button></div>}{scenario && <div className="metric-row top-gap"><Metric label="B0 peak" value={fmt(scenario.outcome.baseline_peak_kw)} unit="kW" /><Metric label="Scenario peak" value={fmt(scenario.outcome.scenario_peak_kw)} unit="kW" /><Metric label="Peak delta" value={fmt(scenario.outcome.peak_delta_kw)} unit="kW" note={scenario.outcome.scenario_status} /></div>}</Panel>}
+        {tab === 'scenarios' && <>
+          <Panel eyebrow="08 / CONDITIONS" title="Scenario lab"><p className="intro">Explore declared synthetic conditions, then compare B0 with an optimized schedule on the same truth under a changed grid import limit. Separate generated datasets are different truth cases.</p>
+            <div className="scenario-presets"><button onClick={() => { setDatasetForm({ ...datasetForm, weather: 'clear', load: 'normal' }); setTab('readiness') }}>Normal conditions <span>Prepare dataset ↗</span></button><button onClick={() => { setDatasetForm({ ...datasetForm, weather: 'clear', load: 'high_cooling' }); setTab('readiness') }}>High demand <span>Prepare dataset ↗</span></button><button onClick={() => { setDatasetForm({ ...datasetForm, weather: 'cloudy', load: 'normal' }); setTab('readiness') }}>Cloudy PV <span>Prepare dataset ↗</span></button><button onClick={() => setTab('experiments')}>Missing data <span>Open paired study ↗</span></button><div>Forecast error <span>Comparison not available</span></div>{site?.config.battery ? <button onClick={() => { setScenarioLimit(site.config.grid.import_limit_kw); setScenarioBatteryLimit(fmt(site.config.battery.max_discharge_kw * .5, 2)) }}>Battery uncertainty <span>Prepare deterministic derating ↗</span></button> : <div>Battery uncertainty <span>Configure a battery first</span></div>}</div>
+          </Panel>
+          <Panel eyebrow="PAIRED / SAME TRUTH" title="Constrained grid comparison" aside={<Status tone={scenario ? 'ok' : 'muted'}>{scenario ? 'Run available' : 'Not run'}</Status>}><p className="intro">This path keeps the selected synthetic truth fixed. Grid and battery limit changes are deterministic stress cases, not calibrated uncertainty. An infeasible outcome stays visible.</p>{!synthetic ? <Notice>Select synthetic data first.</Notice> : <div className="form-grid compact"><label>Scenario import limit · kW<input type="number" min="0" value={scenarioLimit} onChange={e => setScenarioLimit(e.target.value)} /></label>{site?.config.battery && <label>Battery discharge limit · kW<input type="number" min="0" value={scenarioBatteryLimit} placeholder="Use site limit" onChange={e => setScenarioBatteryLimit(e.target.value)} /></label>}<button className="primary" onClick={compareScenario} disabled={!!busy}>Compare scenario</button></div>}
+            <div className="comparison-table"><div className="table-head"><span>STRATEGY</span><span>PEAK IMPORT</span><span>STATE</span></div><div><strong>No flexibility action / B0</strong><span>{scenario?.outcome?.baseline_peak_kw == null ? 'No result available' : `${fmt(scenario.outcome.baseline_peak_kw)} kW`}</span><Status tone={scenario?.outcome?.baseline_status === 'valid' ? 'ok' : 'muted'}>{scenario ? titleCase(scenario.outcome.baseline_status) : 'Not run'}</Status></div><div><strong>Rule based / B1</strong><span>No result available</span><Status>Not exposed by API</Status></div><div><strong>Optimization</strong><span>{scenario?.outcome?.scenario_peak_kw == null ? 'No result available' : `${fmt(scenario.outcome.scenario_peak_kw)} kW`}</span><Status tone={scenario?.outcome?.scenario_status === 'optimal_validated' ? 'ok' : 'bad'}>{scenario ? titleCase(scenario.outcome.scenario_status) : 'Not run'}</Status></div><div><strong>Uncertainty aware</strong><span>No result available</span><Status>Not implemented</Status></div></div>
+            {scenario?.outcome?.reason && <Notice tone="error">{scenario.outcome.reason}</Notice>}
+            {scenario && <p className="footnote">Paired truth checksum: {scenario.outcome.truth_sha256?.slice(0, 16)}… · Peak delta: {scenario.outcome.peak_delta_kw == null ? 'Unknown' : `${fmt(scenario.outcome.peak_delta_kw)} kW`}.</p>}
+          </Panel>
+        </>}
         {tab === 'experiments' && <Panel eyebrow="09 / REPRODUCIBLE PROTOCOL" title="Experiments"><p className="intro">Run the checked-in paired missingness protocol. It fixes synthetic truth for seed 7, then compares clean, gapped, and 30-minute observations. Failed and abstained cases are retained.</p><button className="primary" onClick={runExperiment} disabled={!!busy}>Run protocol</button>{experiment && <div className="claim-list top-gap">{experiment.runs.flatMap(run => run.results.map(item => <div className="claim" key={item.observation_dataset_id}><span className={`state ${item.status === 'delivered' ? 'usable' : 'insufficient'}`}>{item.status}</span><div><strong>{item.observation_dataset_id}</strong><p>Estimated: {fmt(item.estimated_sustained_kw)} kW · Realized: {fmt(item.realized_sustained_kw)} kW · Overstatement: {fmt(item.overstatement_kw)} kW</p><small>Truth checksum: {run.truth_sha256.slice(0, 16)}…</small></div></div>))}</div>}</Panel>}
-        {tab === 'report' && <Panel eyebrow="10 / TRACEABLE EXPORT" title="Research report"><p className="intro">The report links its result to a run and dataset. Synthetic results are labeled on the first page. Missing or failed analytical sections remain unavailable.</p>{!optimization && !assessment ? <Notice>Complete an assessment or optimization run first.</Notice> : <><div className="metric-row"><Metric label="Selected run" value={(optimization || assessment).run_id.slice(0, 12) + '…'} /><Metric label="Status" value={(optimization || assessment).status} /><Metric label="Source" value="Synthetic" /></div><div className="actions"><a className="primary link-button" href={`/v1/reports/${(optimization || assessment).run_id}?format=markdown`} target="_blank" rel="noreferrer">Open Markdown report</a><a className="secondary link-button" href={`/v1/reports/${(optimization || assessment).run_id}?format=json`} target="_blank" rel="noreferrer">Open JSON</a></div></>}</Panel>}
+        {tab === 'report' && <>
+          <Panel eyebrow="10 / TRACEABLE EXPORT" title="Research report" aside={<Status tone={report?.synthetic ? 'synthetic' : 'muted'}>{report?.headline_label || 'No report'}</Status>}><p className="intro">Every computed metric is linked to a run, dataset, unit, and calculation. Missing analytical sections remain unavailable.</p>{!currentRun ? <Notice>Complete an assessment or optimization run first.</Notice> : <><div className="metric-row"><Metric label="Selected run" value={shortId(currentRun.run_id)} /><Metric label="Status" value={titleCase(currentRun.status)} /><Metric label="Source" value={report ? sourceLabel(report.synthetic) : 'Loading'} /></div><div className="actions"><a className="primary link-button" href={`/v1/reports/${currentRun.run_id}?format=markdown`} target="_blank" rel="noreferrer">Open Markdown report</a><a className="secondary link-button" href={`/v1/reports/${currentRun.run_id}?format=json`} target="_blank" rel="noreferrer">Open JSON</a></div></>}</Panel>
+          {currentRun && <div className="report-grid">
+            <Panel eyebrow="RESEARCH QUESTION" title="What can this site credibly provide?"><p className="report-copy">Estimate a feasible sustained grid response from declared assets and data, while exposing evidence gaps and uncertainty.</p></Panel>
+            <Panel eyebrow="DATASET / READINESS" title="Evidence boundary"><div className="report-facts"><EvidenceRow label="Dataset" detail={report?.dataset_id || datasetId || 'Unavailable'} status={report ? sourceLabel(report.synthetic) : 'Unknown'} tone={report?.synthetic ? 'synthetic' : 'muted'} /><EvidenceRow label="Readiness" detail={quality ? `${qualityClaims.length} claim-specific assessments` : 'Assessment not run'} status={quality ? 'Assessed' : 'Unknown'} tone={quality ? 'ok' : 'muted'} /></div></Panel>
+            <Panel eyebrow="COMPARATOR / B0" title="Baseline"><p className="report-copy">{report?.sections?.baseline?.definition || 'No baseline report available.'}</p><p className="footnote">A B0 peak appears only after a successful recommendation comparison.</p></Panel>
+            <Panel eyebrow="ISSUE TIME / METHODS" title="Forecast & uncertainty"><div className="report-facts"><EvidenceRow label="Forecast" detail={forecast ? `${forecast.forecast.method} · separate session result` : 'No forecast attached to this run'} status={forecast ? 'Session only' : 'Unknown'} tone={forecast ? 'synthetic' : 'muted'} /><EvidenceRow label="Uncertainty" detail={report?.sections?.forecast_and_uncertainty?.reason || 'No calibrated evidence'} status="Unknown" /></div></Panel>
+            <Panel eyebrow="RESPONSE / ENVELOPE" title="Flexibility"><div className="report-facts">{report?.sections?.envelope?.length ? report.sections.envelope.map(item => <EvidenceRow key={item.mode} label={titleCase(item.mode)} detail={item.sustained_kw == null ? 'No result available' : `${fmt(item.sustained_kw)} kW sustained`} status={titleCase(item.status)} tone={item.status === 'optimal' ? 'ok' : 'muted'} />) : <p className="report-copy">No flexibility assessment attached to this run.</p>}</div></Panel>
+            <Panel eyebrow="SCHEDULE / VALIDATION" title="Optimization"><div className="report-facts"><EvidenceRow label="Solver" detail={report?.sections?.optimization?.termination || 'No optimization attached to this run'} status={report?.sections?.optimization?.status ? titleCase(report.sections.optimization.status) : 'Unknown'} tone={report?.sections?.optimization?.status === 'optimal_validated' ? 'ok' : 'muted'} /><EvidenceRow label="Objective" detail={report?.metrics?.find(item => item.name === 'optimized_objective')?.value == null ? 'No result available' : `${fmt(report.metrics.find(item => item.name === 'optimized_objective').value)} ${report.metrics.find(item => item.name === 'optimized_objective').unit}`} status={report?.metrics?.some(item => item.name === 'optimized_objective') ? 'Validated' : 'Unknown'} tone={report?.metrics?.some(item => item.name === 'optimized_objective') ? 'ok' : 'muted'} /></div></Panel>
+            <Panel eyebrow="STUDIES / FAILURES" title="Experiment results"><p className="report-copy">{experiment ? `${latestExperimentCases.length} paired cases in a separate session protocol: ${experiment.protocol_id}.` : 'No experiment run in this session.'}</p>{experiment && <p className="footnote">{latestExperimentCases.filter(item => item.status !== 'delivered').length} cases abstained or failed; their states are retained.</p>}<div className="section-rule"><span>CURRENT RUN FAILURE</span></div><p className="report-copy">{report?.sections?.failed_or_infeasible || 'None recorded for this run.'}</p></Panel>
+            <Panel eyebrow="ACTION / EVIDENCE" title="Recommendation"><p className="report-copy">{report?.sections?.recommendation?.action || report?.sections?.recommendation?.reason || 'No validated recommendation available.'}</p><p className="footnote">Reliability: {titleCase(report?.sections?.recommendation?.reliability)}. No equipment control.</p></Panel>
+            <Panel eyebrow="MEASUREMENT / NEXT" title="Next measurements">{report?.sections?.next_measurements?.length ? <ul className="report-list">{report.sections.next_measurements.map((item, index) => <li key={index}>{item}</li>)}</ul> : <p className="report-copy">No measurement ranking available for this run.</p>}</Panel>
+            <Panel eyebrow="BOUNDARY / CLAIMS" title="Limitations"><ul className="report-list">{(report?.limitations || ['No report available.']).map(item => <li key={item}>{item}</li>)}</ul></Panel>
+            <Panel eyebrow="TRACE / REPLAY" title="Reproducibility"><div className="report-facts"><EvidenceRow label="Run ID" detail={currentRun.run_id} status={titleCase(currentRun.status)} /><EvidenceRow label="Dataset hash" detail={report?.dataset_hashes?.[datasetId]?.slice(0, 24) || 'Unknown'} status={report ? 'Recorded' : 'Unknown'} tone={report ? 'ok' : 'muted'} /><EvidenceRow label="Canonical model" detail={report?.canonical_model_version || 'Unknown'} status={report ? 'Recorded' : 'Unknown'} tone={report ? 'ok' : 'muted'} /></div></Panel>
+          </div>}
+        </>}
+        {tab === 'settings' && <Panel eyebrow="WORKSPACE / SETTINGS" title="Local research configuration"><div className="detail-grid"><div><span>SERVICE</span><strong>{apiOnline ? 'Connected to local API' : 'Unavailable'}</strong></div><div><span>ACTIVE SITE</span><strong>{site?.name || 'Not configured'}</strong></div><div><span>DATA SOURCE</span><strong>{dataset ? sourceLabel(synthetic) : 'None selected'}</strong></div></div><p className="footnote">This prototype stores metadata in the local service. It does not control equipment or connect to live utility systems.</p></Panel>}
       </div>
     </main>
   </div>

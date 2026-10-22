@@ -63,7 +63,7 @@ class APITests(unittest.TestCase):
             self.assertEqual(compared.status_code, 201, compared.text)
             self.assertEqual(compared.json()["outcome"]["truth_sha256"], dataset.json()["truth_sha256"])
             if Path("frontend/dist/index.html").exists():
-                self.assertIn("Energy Lab", client.get("/").text)
+                self.assertIn("FlexGrid", client.get("/").text)
             self.assertFalse(any("control" in route.path for route in create_app(Path(directory) / "other.sqlite3").routes))
 
     def test_invalid_units_and_missing_resource_have_typed_errors(self):
