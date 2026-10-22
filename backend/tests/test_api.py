@@ -62,6 +62,8 @@ class APITests(unittest.TestCase):
             compared = client.post(f"/v1/sites/{site_id}/scenarios/{scenario.json()['scenario_id']}/compare")
             self.assertEqual(compared.status_code, 201, compared.text)
             self.assertEqual(compared.json()["outcome"]["truth_sha256"], dataset.json()["truth_sha256"])
+            self.assertEqual(compared.json()["outcome"]["rule_status"], "valid")
+            self.assertIsNotNone(compared.json()["outcome"]["rule_peak_kw"])
             if Path("frontend/dist/index.html").exists():
                 self.assertIn("FlexGrid", client.get("/").text)
             self.assertFalse(any("control" in route.path for route in create_app(Path(directory) / "other.sqlite3").routes))

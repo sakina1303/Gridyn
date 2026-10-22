@@ -1,0 +1,39 @@
+{
+  "experiment_id": "paired-measurement-restoration",
+  "hypothesis_id": "H-next-measurement-01",
+  "site": {
+    "site_id": "synthetic-campus",
+    "timezone": "Asia/Kolkata",
+    "grid": {"import_limit_kw": 300, "export_limit_kw": 0},
+    "pv": {"ac_capacity_kw": 80, "allow_curtailment": true},
+    "battery": {
+      "nominal_capacity_kwh": 20,
+      "min_soc_fraction": 0.1,
+      "max_soc_fraction": 0.9,
+      "initial_energy_kwh": 10,
+      "max_charge_kw": 5,
+      "max_discharge_kw": 5,
+      "charge_efficiency": 0.9,
+      "discharge_efficiency": 0.9,
+      "min_terminal_energy_kwh": null,
+      "max_ramp_kw_per_hour": null
+    },
+    "evs": [],
+    "pumps": [],
+    "hvacs": []
+  },
+  "start_utc": "2026-01-01T00:00:00+00:00",
+  "interval_count": 192,
+  "seeds": [7, 11, 19],
+  "observation_variants": [
+    {"id": "full", "visible_quantities": ["pv_available_kw", "critical_load_kw", "fixed_load_kw", "outdoor_temperature_c"]},
+    {"id": "without_pv", "visible_quantities": ["critical_load_kw", "fixed_load_kw", "outdoor_temperature_c"]},
+    {"id": "without_critical", "visible_quantities": ["pv_available_kw", "fixed_load_kw", "outdoor_temperature_c"]},
+    {"id": "without_fixed", "visible_quantities": ["pv_available_kw", "critical_load_kw", "outdoor_temperature_c"]}
+  ],
+  "issue_index": 96,
+  "horizon_intervals": 96,
+  "response_start_index": 48,
+  "response_duration_intervals": 4,
+  "direction": "down"
+}

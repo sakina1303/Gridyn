@@ -26,29 +26,54 @@ class PairedOutcome:
     scenario_import_kwh: float | None
     reason: str | None
     synthetic: bool = True
+    rule_status: str = "not_run"
+    rule_peak_kw: float | None = None
+    rule_import_kwh: float | None = None
+    rule_reason: str | None = None
+    baseline_reason: str | None = None
 
 
 def compare_scenario(
     site: SiteConfig, truth: tuple[TruthDisturbance, ...], truth_sha256: str,
     config: ScenarioConfig, *, objective: ObjectiveConfig,
 ) -> PairedOutcome:
-    baseline_site = site
     changed_site = apply_scenario(site, config)
     if not truth_sha256:
         raise ValueError("paired truth checksum is required")
-    plan = build_baseline(baseline_site, tuple(item.interval for item in truth), policy="B0")
-    try:
-        baseline = simulate(baseline_site, truth, config.seed, plan.schedule)
-    except InfeasibleSchedule as exc:
-        return PairedOutcome(config.scenario_id, truth_sha256, "infeasible", "not_run",
-                             None, None, None, None, None, str(exc))
-    baseline_peak = max(step.flows.grid_import_kw for step in baseline.steps)
+    intervals = tuple(item.interval for item in truth)
+
+    def replay_rule(policy: str):
+        try:
+            plan = build_baseline(changed_site, intervals, policy=policy)
+            trajectory = simulate(changed_site, truth, config.seed, plan.schedule)
+            return "valid", max(step.flows.grid_import_kw for step in trajectory.steps), trajectory.grid_import_kwh, None
+        except (ValueError, InfeasibleSchedule) as exc:
+            return "infeasible", None, None, str(exc)
+
+    baseline_status, baseline_peak, baseline_import, baseline_reason = replay_rule("B0")
+    rule_status, rule_peak, rule_import, rule_reason = replay_rule("B1")
     solved = solve_schedule(changed_site, truth, objective, seed=config.seed)
     if solved.validation is None:
-        return PairedOutcome(config.scenario_id, truth_sha256, "valid", solved.status,
-                             baseline_peak, None, None, baseline.grid_import_kwh, None, solved.message)
+        return PairedOutcome(
+            scenario_id=config.scenario_id, truth_sha256=truth_sha256,
+            baseline_status=baseline_status, scenario_status=solved.status,
+            baseline_peak_kw=baseline_peak, scenario_peak_kw=None, peak_delta_kw=None,
+            baseline_import_kwh=baseline_import, scenario_import_kwh=None,
+            reason=solved.message or baseline_reason,
+            rule_status=rule_status, rule_peak_kw=rule_peak,
+            rule_import_kwh=rule_import, rule_reason=rule_reason,
+            baseline_reason=baseline_reason,
+        )
     scenario_trace = solved.validation.trajectory
     scenario_peak = max(step.flows.grid_import_kw for step in scenario_trace.steps)
-    return PairedOutcome(config.scenario_id, truth_sha256, "valid", "optimal_validated",
-                         baseline_peak, scenario_peak, scenario_peak - baseline_peak,
-                         baseline.grid_import_kwh, scenario_trace.grid_import_kwh, None)
+    return PairedOutcome(
+        scenario_id=config.scenario_id, truth_sha256=truth_sha256,
+        baseline_status=baseline_status, scenario_status="optimal_validated",
+        baseline_peak_kw=baseline_peak, scenario_peak_kw=scenario_peak,
+        peak_delta_kw=scenario_peak - baseline_peak if baseline_peak is not None else None,
+        baseline_import_kwh=baseline_import, scenario_import_kwh=scenario_trace.grid_import_kwh,
+        reason=baseline_reason,
+        rule_status=rule_status, rule_peak_kw=rule_peak,
+        rule_import_kwh=rule_import, rule_reason=rule_reason,
+        baseline_reason=baseline_reason,
+    )

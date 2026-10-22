@@ -14,9 +14,10 @@ import pyomo
 from energy_lab.data.manifest import canonical_sha256
 from energy_lab.data.serde import record_to_dict, site_from_dict, truth_to_dict
 from energy_lab.simulation.generator import GENERATOR_VERSION, GenerationConfig, generate_truth
-from energy_lab.simulation.observer import ObservationConfig, observe_truth
+from energy_lab.simulation.observer import ALL_QUANTITIES, ObservationConfig, observe_truth
 
 from .ablations import run_paired_ablation
+from .measurement_value import compare_restorations
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +77,7 @@ def run_experiment(spec: ExperimentSpec, output_root: Path) -> tuple[dict, ...]:
         configs = tuple(ObservationConfig(
             dataset_id=f"{spec.experiment_id}-{variant['id']}-{seed}", root_seed=seed,
             interval_minutes=variant.get("interval_minutes", 15),
+            visible_quantities=tuple(variant.get("visible_quantities", ALL_QUANTITIES)),
             missing_probability=variant.get("missing_probability", 0),
             missing_blocks=tuple(tuple(block) for block in variant.get("missing_blocks", [])),
             power_noise_std_kw=variant.get("power_noise_std_kw", 0),
@@ -87,6 +89,7 @@ def run_experiment(spec: ExperimentSpec, output_root: Path) -> tuple[dict, ...]:
             start_index=spec.response_start_index,
             duration_intervals=spec.response_duration_intervals,
             direction=spec.direction, seed=seed)
+        measurement_effects = compare_restorations(configs, results)
         _write_json(run_dir / "truth.json", [truth_to_dict(item) for item in generated.disturbances])
         for config in configs:
             observed = observe_truth(generated, config).observed
@@ -104,6 +107,7 @@ def run_experiment(spec: ExperimentSpec, output_root: Path) -> tuple[dict, ...]:
                     "seed": seed,
                     "forecast_issue_utc": generated.disturbances[spec.issue_index].interval.start.isoformat(),
                     "results": [asdict(item) for item in results],
+                    "measurement_effects": [asdict(item) for item in measurement_effects],
                     "synthetic": True}
         _write_json(run_dir / "manifest.json", manifest)
         summaries.append(manifest)
