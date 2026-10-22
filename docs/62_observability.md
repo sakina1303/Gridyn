@@ -1,0 +1,5 @@
+# Observability and debugging contract
+
+Every run has correlation IDs (`experiment_id`, `scenario_id`, `run_id`) and a manifest containing dataset/checksum, canonical-model/generator/model/optimizer versions, seed, timestep, timezone, tariff reference, decision issue time, information set, objective profile and solver options. Structured logs record stage start/end, quality gate, forecast model/cutoff, uncertainty source, solver termination/objective components/bound/gap/runtime, validator residual maxima, and report status.
+
+Debug artifacts may include per-interval balance/SOC/service residuals, forecast error traces and binding constraint summaries, but are stored as access-controlled artifacts, not dumped to routine logs. Default logs contain IDs and aggregate diagnostics only. Synthetic datasets may be freely reproducible; real facility data require restricted storage and retention from [63](63_security_privacy.md). A failed run keeps input manifest, failure code and safe diagnostic summary. Metrics distinguish input invalidity, model infeasibility, solver timeout, and post-solve validation failure; none are silently converted to zero savings.

@@ -1,0 +1,7 @@
+# MVP scope and acceptance
+
+**Must have:** deterministic synthetic campus with 15/30/60 minute support; CSV import of site/PV data; typed asset and provenance schema; data quality/readiness verdict; physically consistent battery and load models; baseline and rule; persistence forecasts and one simple ML comparator; deterministic scenario uncertainty; feasible up/down flexibility and duration; small formal MILP scheduler; independent constraint checks; baseline comparison; structured recommendation; minimal scenario UI and downloadable research report. Each result carries units and synthetic/observed label.
+
+**Should have:** six-month synthetic seasonal tests, residual-based intervals if calibrated, ranked measurement value, one real tariff order scenario, experiment runner. **Could have:** more asset types, multi-site comparison, quantile forecasts, robust stress-set optimization, report PDF. **Do not build yet:** hardware, automatic control, AC network model, VPP/market settlement, live DISCOM API, complex auth, LLM explanations, mobile app, composite score.
+
+MVP acceptance: all interval power-balance and SOC tests pass; no critical service shortfall; infeasible inputs surface a clear status; baseline and optimization are evaluated on identical truth; missing-data experiment reports overstatement/abstention; report can reproduce a run. The first UI needs only site setup, readiness, assessment, scenario comparison, and report navigation; other views may be sections rather than ten polished pages.

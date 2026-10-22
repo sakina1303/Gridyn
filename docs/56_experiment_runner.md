@@ -1,0 +1,7 @@
+# Configuration-driven experiment runner
+
+An `ExperimentSpec` declares hypothesis ID, dataset generator/version, site archetype, truth and observation transforms, model and optimizer variants, scenario grid, seed list, metric list and split dates. The runner expands to immutable `RunSpec`s, executes each in dependency order, caches by content hash, and stores results even when a run is infeasible or failed. Experiments are configuration files, not hardcoded API branches.
+
+Required metadata: experiment/run IDs, creation UTC timestamp, code revision, canonical-model/schema/generator versions, package/solver versions, root and derived seeds, config/dataset checksums, forecast training cutoff, decision issue time, solver status/gap, quality report, metrics and artifact paths. Save truth artifacts separately from analyst-visible observation artifacts. A rerun with same version/config/seed must reproduce bitwise data and numerically equivalent metrics within documented tolerance; exact MILP variable schedules can differ when multiple optima exist, so compare objective/feasibility and use deterministic tie-break when needed.
+
+Artifacts: YAML/JSON spec, truth/observed dataset manifests, quality report, forecast traces, schedules, residuals, metric table, failure log, figures and report. Store no raw sensitive facility data in routine logs. The CLI and later API call the same runner. Parallel runs may be added after deterministic single-run behavior passes; resource limits and retries must preserve provenance.

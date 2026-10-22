@@ -1,0 +1,7 @@
+# Research contribution and claim boundary
+
+The strongest candidate is **data-efficient, reliability-aware estimation of a site's flexibility envelope**: identify what can be promised under incomplete measurements and how much a new measurement reduces overstatement risk. This combines minimum-data ablations, uncertainty-aware deliverability, and interpretable operating constraints. It is a proposed contribution, not a novelty claim. A deeper literature review and comparison with FlexMeasures and published flexibility-envelope methods are required before submission.
+
+Potential paper question: “Across simulated Indian campus archetypes and one later real site, how do meter resolution and asset observability affect the calibration and usefulness of 1–4 hour flexibility promises?” Core methods: truthful full-information reference, systematic data removal, conservative envelope estimator, held-out dispatch replay, measurement value analysis. Primary outcome: rate and magnitude of over-promised kW at a defined service reliability level; secondary: decision regret, data collection burden, interpretability.
+
+An IRENA demonstration can show the research method and a simulation, not field impact. A hackathon or portfolio can show product flow. Normal engineering includes dashboards, imports, and optimizer integration. If a rigorous baseline achieves the same calibrated envelope with less complexity, report that and narrow the contribution to the empirical data requirement findings. If no real data becomes available, call the result simulation evidence only.
