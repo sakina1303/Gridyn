@@ -4,22 +4,44 @@ The project name is undecided. This is an **advisory, simulation-first research 
 
 ## Current status
 
-Phases 0–6 are implemented: canonical units and UTC intervals, typed site/asset constraints, AC-bus power balance, battery SOC transitions, EV and pump service tracking, conservative HVAC bounds, and a deterministic 15-minute simulator that replays a supplied schedule. Seeded synthetic truth generation and an independent observation layer can produce missing, noisy, aggregated or time-shifted data for research tests. CSV ingestion, quality checks, and claim-specific readiness are present. Two causal comparator schedules (B0 fixed earliest service and B1 calendar solar-hour preference) are validated by simulator replay. Issue-time-bounded previous-day/week, hour/day mean, and calendar ridge forecasts have rolling backtests.
+The **local synthetic research app is runnable**. It includes the canonical 15-minute simulator, seeded truth and observation generation, CSV normalization and claim-specific readiness, B0/B1 baselines, simple and tree forecasts, a joint Pyomo/HiGHS sustained-response envelope, a validated cost/peak/solar-use MILP, paired stress and missing-data studies, a JSON experiment runner, a local SQLite-backed FastAPI service, a React interface, and a traceable Markdown/JSON report.
 
-The joint flexibility envelope, MILP optimization, uncertainty calibration, experiment runner, API, UI, and real-data integrations are not implemented. Phase 7 requires a MILP solver; no solver is installed in the current Python environment. The baseline heuristics may report infeasibility for a site with ramp or grid constraints rather than search for a feasible alternative. Forecast error results from synthetic truth are research fixtures, not field performance claims.
+The app is advisory. It does not perform physical control. The flexibility view is explicitly a perfect-information synthetic oracle; tested reliability remains unknown without calibrated held-out evidence. Observed CSV data can be checked for readiness and forecasted, but an observed-only dataset is not passed to the hidden-truth optimizer. The B0/B1 heuristics can report infeasibility under ramp or grid constraints rather than search for an alternative. The UI site form covers grid, PV and battery; EV, pump and HVAC are supported by the backend/API schema. Long-running jobs currently execute synchronously in the local service. Real-site pilot access control, calibrated probability claims, a broader experiment matrix, and independent operator validation remain future work.
+
+## Start the local app
+
+Use Python 3.11+ and Node.js 20+ with pnpm. From the repository root:
+
+```bash
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -e backend
+PYTHONPATH=backend/src .venv/bin/uvicorn energy_lab.api.app:app --host 127.0.0.1 --port 8765
+```
+
+In another terminal:
+
+```bash
+cd frontend
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Open `http://127.0.0.1:5173/`. The API binds to loopback only; Vite proxies `/v1` to port 8765. After `pnpm build`, FastAPI also serves the built client at `http://127.0.0.1:8765/`, so the Vite server is optional for normal use. Generated local metadata and experiment artifacts are under `.local/` and ignored by Git.
 
 ## Run the tests
 
-Use Python 3.11 or newer. The implemented core uses only the standard library.
+With the virtual environment installed:
 
 ```bash
-PYTHONPATH=backend/src python3 -m unittest discover -s backend/tests -v
+PYTHONPATH=backend/src .venv/bin/python -m unittest discover -s backend/tests -v
 ```
 
-Run a small reproducible synthetic-data demonstration:
+Build the frontend and run the reproducible synthetic demonstration:
 
 ```bash
-PYTHONPATH=backend/src python3 scripts/generate_synthetic_demo.py
+cd frontend && pnpm build && cd ..
+PYTHONPATH=backend/src .venv/bin/python scripts/demo.py
+PYTHONPATH=backend/src .venv/bin/python scripts/run_experiment.py configs/experiments/paired_missingness.json
 ```
 
 ## Physical convention
