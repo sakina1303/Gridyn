@@ -41,11 +41,25 @@ class APITests(unittest.TestCase):
             self.assertEqual(assessment.status_code, 201, assessment.text)
             self.assertEqual(assessment.json()["status"], "succeeded")
             self.assertIsNone(client.get(f"/v1/runs/{assessment.json()['run_id']}").json()["reliable_kw"])
+            sensitivity = client.get(
+                f"/v1/runs/{assessment.json()['run_id']}/measurement-sensitivity")
+            self.assertEqual(sensitivity.status_code, 200, sensitivity.text)
+            self.assertTrue(sensitivity.json()["synthetic"])
+            self.assertEqual(sensitivity.json()["source_run_id"], assessment.json()["run_id"])
+            self.assertIn("field priority unvalidated", sensitivity.json()["result"]["limitation"])
+            assessment_report = client.get(
+                f"/v1/reports/{assessment.json()['run_id']}?format=json")
+            self.assertEqual(assessment_report.status_code, 200, assessment_report.text)
+            self.assertEqual(assessment_report.json()["sections"]["measurement_sensitivity"]["source_run_id"],
+                             assessment.json()["run_id"])
+            self.assertIn("Synthetic model sensitivity",
+                          client.get(f"/v1/reports/{assessment.json()['run_id']}?format=markdown").text)
             optimized = client.post(f"/v1/sites/{site_id}/optimization-runs", json={
                 "dataset_id": dataset_id, "objective_profile": "peak"})
             self.assertEqual(optimized.status_code, 201, optimized.text)
             self.assertEqual(optimized.json()["status"], "succeeded")
             run_id = optimized.json()["run_id"]
+            self.assertEqual(client.get(f"/v1/runs/{run_id}/measurement-sensitivity").status_code, 409)
             report = client.get(f"/v1/reports/{run_id}?format=markdown")
             self.assertIn("SIMULATION DATA ONLY", report.text)
             self.assertIn("Validated metrics", report.text)
@@ -64,6 +78,17 @@ class APITests(unittest.TestCase):
             self.assertEqual(compared.json()["outcome"]["truth_sha256"], dataset.json()["truth_sha256"])
             self.assertEqual(compared.json()["outcome"]["rule_status"], "valid")
             self.assertIsNotNone(compared.json()["outcome"]["rule_peak_kw"])
+            stress = client.post(
+                f"/v1/sites/{site_id}/scenarios/{scenario.json()['scenario_id']}/stress-aware-compare")
+            self.assertEqual(stress.status_code, 201, stress.text)
+            self.assertTrue(stress.json()["synthetic"])
+            self.assertIn("statistical reliability unknown", stress.json()["outcome"]["evidence_label"])
+            self.assertTrue(stress.json()["evaluation_stresses"])
+            if stress.json()["outcome"]["status"] == "selected":
+                self.assertEqual(len(stress.json()["schedule"]), 4)
+                stress_report = client.get(f"/v1/reports/{stress.json()['run_id']}?format=markdown")
+                self.assertEqual(stress_report.status_code, 200, stress_report.text)
+                self.assertIn("Declared synthetic stress study", stress_report.text)
             if Path("frontend/dist/index.html").exists():
                 self.assertIn("FlexGrid", client.get("/").text)
             self.assertFalse(any("control" in route.path for route in create_app(Path(directory) / "other.sqlite3").routes))

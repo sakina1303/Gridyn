@@ -16,14 +16,19 @@ class StressSpec:
     critical_load_factor: float = 1.0
     fixed_load_factor: float = 1.0
     initial_battery_energy_kwh: float | None = None
+    battery_charge_factor: float = 1.0
+    battery_discharge_factor: float = 1.0
     ev_required_factor: float = 1.0
     provenance: str = "declared_synthetic_stress"
 
     def __post_init__(self) -> None:
         if not self.scenario_id:
             raise ValueError("stress scenario id is required")
-        for name in ("pv_factor", "critical_load_factor", "fixed_load_factor", "ev_required_factor"):
+        for name in ("pv_factor", "critical_load_factor", "fixed_load_factor", "ev_required_factor",
+                     "battery_charge_factor", "battery_discharge_factor"):
             nonnegative(getattr(self, name), name)
+        if self.battery_charge_factor > 1 or self.battery_discharge_factor > 1:
+            raise ValueError("battery stress factors cannot exceed configured ratings")
         if self.initial_battery_energy_kwh is not None:
             finite_number(self.initial_battery_energy_kwh, "stressed initial battery energy")
         if self.provenance not in {"declared_synthetic_stress", "sampled_holdout"}:
@@ -38,6 +43,12 @@ def apply_stress(
         if battery is None:
             raise ValueError("initial SOC stress requires a configured battery")
         battery = replace(battery, initial_energy_kwh=spec.initial_battery_energy_kwh)
+    if spec.battery_charge_factor != 1 or spec.battery_discharge_factor != 1:
+        if battery is None:
+            raise ValueError("battery rating stress requires a configured battery")
+        battery = replace(battery,
+                          max_charge_kw=battery.max_charge_kw * spec.battery_charge_factor,
+                          max_discharge_kw=battery.max_discharge_kw * spec.battery_discharge_factor)
     evs = tuple(replace(ev, required_energy_kwh=ev.required_energy_kwh * spec.ev_required_factor)
                 for ev in site.evs)
     stressed_site = replace(site, battery=battery, evs=evs)

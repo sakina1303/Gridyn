@@ -81,7 +81,12 @@ def run_experiment(spec: ExperimentSpec, output_root: Path) -> tuple[dict, ...]:
             missing_probability=variant.get("missing_probability", 0),
             missing_blocks=tuple(tuple(block) for block in variant.get("missing_blocks", [])),
             power_noise_std_kw=variant.get("power_noise_std_kw", 0),
+            temperature_noise_std_c=variant.get("temperature_noise_std_c", 0),
             power_bias_fraction=variant.get("power_bias_fraction", 0),
+            outlier_probability=variant.get("outlier_probability", 0),
+            outlier_multiplier=variant.get("outlier_multiplier", 2),
+            timestamp_shift_minutes=variant.get("timestamp_shift_minutes", 0),
+            duplicate_indices=tuple(variant.get("duplicate_indices", [])),
         ) for variant in spec.observation_variants)
         results = run_paired_ablation(generated, configs,
             issue_at_utc=generated.disturbances[spec.issue_index].interval.start,

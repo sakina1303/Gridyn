@@ -30,17 +30,24 @@ class MetricValue:
 
 
 def make_report(run: dict, dataset: dict, site: dict, *, quality_report: dict | None = None,
-                recommendation: dict | None = None) -> dict:
+                recommendation: dict | None = None,
+                measurement_sensitivity: dict | None = None) -> dict:
     if run.get("dataset_id") != dataset.get("dataset_id") or run.get("site_id") != site.get("site_id"):
         raise ValueError("report references do not resolve to the same site and dataset")
     if run.get("status") == "succeeded" and run.get("kind") == "optimization":
         if run.get("max_balance_residual_kw") is None or run.get("schedule") is None:
             raise ValueError("successful optimization lacks validated schedule or residual")
+    if run.get("status") == "succeeded" and run.get("kind") == "stress_aware_comparison":
+        if not run.get("schedule") or run.get("outcome", {}).get("status") != "selected":
+            raise ValueError("successful stress study lacks a selected schedule")
     checksum = dataset.get("truth_sha256") or dataset.get("observed_sha256")
     if not checksum:
         raise ValueError("dataset checksum is required")
     start, end = dataset["start_utc"], dataset["end_utc"]
     provenance = "synthetic" if dataset.get("synthetic") else "observed"
+    if measurement_sensitivity and (measurement_sensitivity.get("source_run_id") != run["run_id"] or
+                                    measurement_sensitivity.get("truth_sha256") != checksum):
+        raise ValueError("measurement sensitivity does not trace to this run and dataset")
     metrics: list[MetricValue] = []
     if run.get("kind") == "optimization" and run.get("objective_value") is not None:
         metrics.append(MetricValue("optimized_objective", run["objective_value"],
@@ -62,6 +69,35 @@ def make_report(run: dict, dataset: dict, site: dict, *, quality_report: dict | 
             "kW", start, end, run["run_id"], dataset["dataset_id"], checksum,
             provenance, "B0 peak minus independently replayed optimized peak", "validated",
             recommendation["baseline_peak_kw"], -recommendation["simulated_peak_reduction_kw"]))
+    if measurement_sensitivity:
+        for item in measurement_sensitivity["result"]["candidates"]:
+            if item["maximum_response_shortfall_kw"] is None:
+                continue
+            metrics.append(MetricValue(
+                f"{item['measurement'].lower().replace(' ', '_')}_stress_shortfall",
+                item["maximum_response_shortfall_kw"], "kW", start, end,
+                run["run_id"], dataset["dataset_id"], checksum, "synthetic",
+                f"fixed response replay across {item['declared_range']}; seed {run['seed']}",
+                "model_sensitivity"))
+    if run.get("kind") == "stress_aware_comparison" and run.get("outcome", {}).get("status") == "selected":
+        outcome = run["outcome"]
+        metrics.append(MetricValue(
+            "stress_aware_reference_peak", outcome["reference_peak_kw"], "kW",
+            start, end, run["run_id"], dataset["dataset_id"], checksum,
+            "synthetic", "fixed selected schedule replay on reference synthetic truth",
+            "validated"))
+        metrics.append(MetricValue(
+            "stress_aware_worst_training_peak", outcome["worst_training_peak_kw"], "kW",
+            start, end, run["run_id"], dataset["dataset_id"], checksum,
+            "synthetic", "maximum import over declared training stresses", "validated"))
+        for item in outcome["evaluation"]:
+            if item["peak_import_kw"] is None:
+                continue
+            metrics.append(MetricValue(
+                f"{item['scenario_id'].replace('-', '_')}_peak", item["peak_import_kw"], "kW",
+                start, end, run["run_id"], dataset["dataset_id"], checksum,
+                "synthetic", f"fixed selected schedule replay on {item['scenario_id']}",
+                item["status"]))
     sections = {
         "site_and_period": {"site_name": site.get("name"), "site_id": site["site_id"],
                             "timezone": site["config"]["timezone"], "start_utc": start, "end_utc": end,
@@ -79,11 +115,17 @@ def make_report(run: dict, dataset: dict, site: dict, *, quality_report: dict | 
                          "schedule_run_id": run["run_id"] if run.get("schedule") else None}
                          if run.get("kind") == "optimization" else None,
         "scenario_comparison": run.get("outcome") if run.get("kind") == "scenario_comparison" else None,
+        "stress_study": {"outcome": run.get("outcome"),
+                         "training_stresses": run.get("training_stresses"),
+                         "evaluation_stresses": run.get("evaluation_stresses"),
+                         "schedule_run_id": run["run_id"] if run.get("schedule") else None}
+                        if run.get("kind") == "stress_aware_comparison" else None,
         "recommendation": recommendation,
         "failed_or_infeasible": run.get("reason") if run.get("status") != "succeeded" else None,
         "next_measurements": [item.get("next_measurement") for item in
                               (quality_report or {}).get("readiness", {}).get("claims", [])
                               if item.get("next_measurement")],
+        "measurement_sensitivity": measurement_sensitivity,
     }
     return {"schema_version": "1", "report_id": run["run_id"],
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),

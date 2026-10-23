@@ -72,7 +72,7 @@ def compare_scenario(
         baseline_peak_kw=baseline_peak, scenario_peak_kw=scenario_peak,
         peak_delta_kw=scenario_peak - baseline_peak if baseline_peak is not None else None,
         baseline_import_kwh=baseline_import, scenario_import_kwh=scenario_trace.grid_import_kwh,
-        reason=baseline_reason,
+        reason=None,
         rule_status=rule_status, rule_peak_kw=rule_peak,
         rule_import_kwh=rule_import, rule_reason=rule_reason,
         baseline_reason=baseline_reason,

@@ -72,13 +72,13 @@ def run_paired_ablation(
         except ValueError as exc:
             outcomes.append(result("abstained", str(exc)))
             continue
-        estimate_truth = tuple(TruthDisturbance(
-            interval,
-            forecasts["pv_available_kw"].values_kw[index],
-            forecasts["critical_load_kw"].values_kw[index],
-            forecasts["fixed_load_kw"].values_kw[index],
-        ) for index, interval in enumerate(intervals))
         try:
+            estimate_truth = tuple(TruthDisturbance(
+                interval,
+                forecasts["pv_available_kw"].values_kw[index],
+                forecasts["critical_load_kw"].values_kw[index],
+                forecasts["fixed_load_kw"].values_kw[index],
+            ) for index, interval in enumerate(intervals))
             baseline = build_baseline(site, intervals, policy="B0")
             estimated = assess_envelope(site, estimate_truth, baseline.schedule, seed=seed,
                                         start_index=start_index, duration_intervals=duration_intervals,

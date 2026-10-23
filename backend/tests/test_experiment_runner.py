@@ -34,6 +34,20 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertEqual({effect["quantity"] for effect in run["measurement_effects"]},
                          {"pv_available_kw", "critical_load_kw", "fixed_load_kw"})
 
+    def test_observation_stress_sweep_retains_abstentions_and_pairing(self):
+        spec = replace(load_spec(Path("configs/experiments/paired_observation_stress.json")),
+                       seeds=(7,))
+        with tempfile.TemporaryDirectory() as directory:
+            run = run_experiment(spec, Path(directory))[0]
+        self.assertEqual(len(run["results"]), len(spec.observation_variants))
+        self.assertEqual({result["truth_sha256"] for result in run["results"]},
+                         {run["truth_sha256"]})
+        by_id = {result["observation_dataset_id"].removesuffix("-7"): result
+                 for result in run["results"]}
+        self.assertEqual(by_id["paired-observation-stress-clean"]["status"], "delivered")
+        self.assertEqual(by_id["paired-observation-stress-missing-40"]["status"], "abstained")
+        self.assertIsNone(by_id["paired-observation-stress-missing-40"]["overstatement_kw"])
+
 
 if __name__ == "__main__":
     unittest.main()

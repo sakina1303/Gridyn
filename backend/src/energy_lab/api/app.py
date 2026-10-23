@@ -18,10 +18,11 @@ from energy_lab.core.time import make_intervals
 from energy_lab.data.ingest import DataIngestionError, ingest_csv_text
 from energy_lab.data.quality import assess_quality
 from energy_lab.data.readiness import assess_readiness
-from energy_lab.data.serde import (record_from_dict, record_to_dict, schedule_to_dict,
+from energy_lab.data.serde import (record_from_dict, record_to_dict, schedule_from_dict, schedule_to_dict,
                                    site_from_dict, site_to_dict, truth_from_dict, truth_to_dict)
 from energy_lab.db.store import LocalStore
 from energy_lab.experiments.runner import load_spec, run_experiment
+from energy_lab.experiments.measurement_sensitivity import assess_measurement_sensitivity
 from energy_lab.flexibility.envelope import assess_envelope
 from energy_lab.forecasting.baseline import issue_forecast
 from energy_lab.forecasting.tree import issue_tree_forecast
@@ -35,6 +36,7 @@ from energy_lab.simulation.generator import GenerationConfig, generate_truth
 from energy_lab.simulation.observer import ObservationConfig, observe_truth
 from energy_lab.scenarios.runner import compare_scenario
 from energy_lab.scenarios.schema import ScenarioConfig
+from energy_lab.scenarios.stress_aware import declared_stress_sets, select_stress_aware_schedule
 
 from .schemas import (AssessmentInput, ForecastInput, OptimizationInput, SiteCreate,
                       ScenarioInput, ExperimentInput, SyntheticCreate, ValidateInput)
@@ -230,7 +232,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                        "site_id": site_id, "dataset_id": body.dataset_id,
                        "status": status, "synthetic": True, "truth_sha256": data["truth_sha256"],
                        "direction": body.direction, "start_index": body.start_index,
-                       "duration_intervals": body.duration_intervals,
+                       "duration_intervals": body.duration_intervals, "seed": body.seed,
                        "passes": jsonable_encoder(result.passes),
                        "reliable_kw": None, "method": result.method,
                        "recovery_import_delta_kwh": result.recovery_import_delta_kwh,
@@ -238,7 +240,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         except (ValueError, InfeasibleSchedule) as exc:
             payload = {"schema_version": "1", "run_id": run_id, "kind": "flexibility_assessment",
                        "site_id": site_id, "dataset_id": body.dataset_id, "status": "infeasible",
-                       "synthetic": True, "reason": str(exc), "reliable_kw": None}
+                       "synthetic": True, "reason": str(exc), "reliable_kw": None,
+                       "seed": body.seed}
         store.put("run", run_id, payload)
         return {"run_id": run_id, "status": payload["status"], "passes": payload.get("passes"),
                 "reason": payload.get("reason")}
@@ -280,6 +283,34 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     def get_run(run_id: str):
         return stored("run", run_id)
 
+    @app.get("/v1/runs/{run_id}/measurement-sensitivity")
+    def get_measurement_sensitivity(run_id: str):
+        run = stored("run", run_id)
+        if run["kind"] != "flexibility_assessment" or run["status"] != "succeeded" or not run.get("schedule"):
+            raise _error("assessment_unavailable", "a validated flexibility schedule is required", 409)
+        if "seed" not in run:
+            raise _error("seed_unavailable", "rerun the assessment to record its replay seed", 409)
+        data = stored("dataset", run["dataset_id"])
+        if not data["synthetic"] or "truth" not in data:
+            raise _error("truth_unavailable", "measurement sensitivity needs synthetic truth")
+        site = site_from_dict(data["site_snapshot"])
+        truth = tuple(truth_from_dict(item) for item in data["truth"])
+        baseline = build_baseline(site, tuple(item.interval for item in truth), policy="B0")
+        schedule = tuple(schedule_from_dict(item) for item in run["schedule"])
+        operational = next((item for item in run["passes"] if item["mode"] == "operational"), None)
+        if operational is None or not operational.get("sustained_kw"):
+            raise _error("response_unavailable", "positive operational response is required", 409)
+        try:
+            result = assess_measurement_sensitivity(
+                site, truth, baseline.schedule, schedule, seed=run["seed"],
+                promised_kw=operational["sustained_kw"], direction=run["direction"],
+                start_index=run["start_index"], duration_intervals=run["duration_intervals"])
+        except (ValueError, InfeasibleSchedule) as exc:
+            raise _error("sensitivity_failed", str(exc)) from exc
+        return {"schema_version": "1", "source_run_id": run_id,
+                "truth_sha256": data["truth_sha256"], "synthetic": True,
+                "result": jsonable_encoder(result)}
+
     @app.post("/v1/sites/{site_id}/scenarios", status_code=201)
     def create_scenario(site_id: str, body: ScenarioInput):
         dataset_for(site_id, body.dataset_id)
@@ -315,6 +346,37 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         payload = {"schema_version": "1", "run_id": run_id, "kind": "scenario_comparison",
                    "site_id": site_id, "dataset_id": config.dataset_id, "status": "succeeded",
                    "synthetic": True, "outcome": jsonable_encoder(outcome)}
+        store.put("run", run_id, payload)
+        return payload
+
+    @app.post("/v1/sites/{site_id}/scenarios/{scenario_id}/stress-aware-compare", status_code=201)
+    def compare_stress_aware(site_id: str, scenario_id: str):
+        saved = stored("scenario", scenario_id)
+        if saved["site_id"] != site_id:
+            raise _error("site_scenario_mismatch", "scenario does not belong to site", 404)
+        config = ScenarioConfig(**saved["config"])
+        data = dataset_for(site_id, config.dataset_id)
+        if not data["synthetic"] or "truth" not in data:
+            raise _error("truth_unavailable", "stress-aware study needs synthetic truth")
+        site = site_from_dict(data["site_snapshot"])
+        truth = tuple(truth_from_dict(item) for item in data["truth"])
+        training, evaluation = declared_stress_sets(site)
+        try:
+            outcome = select_stress_aware_schedule(site, truth, config, training, evaluation)
+        except ValueError as exc:
+            raise _error("invalid_stress_study", str(exc)) from exc
+        run_id = _new_id()
+        outcome_payload = jsonable_encoder(outcome)
+        outcome_payload.pop("selected_schedule", None)
+        payload = {"schema_version": "1", "run_id": run_id, "kind": "stress_aware_comparison",
+                   "site_id": site_id, "dataset_id": config.dataset_id,
+                   "status": "succeeded" if outcome.status == "selected" else "infeasible",
+                   "synthetic": True, "truth_sha256": data["truth_sha256"],
+                   "training_stresses": [asdict(item) for item in training],
+                   "evaluation_stresses": [asdict(item) for item in evaluation],
+                   "schedule": [schedule_to_dict(item) for item in outcome.selected_schedule]
+                               if outcome.selected_schedule else None,
+                   "outcome": outcome_payload}
         store.put("run", run_id, payload)
         return payload
 
@@ -380,8 +442,14 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         quality = next((item for item in reversed(store.list("quality_report"))
                         if item["dataset_id"] == run["dataset_id"]), None)
         recommendation = get_recommendation(run_id) if run["kind"] == "optimization" else None
+        operational = next((item for item in run.get("passes", [])
+                            if item["mode"] == "operational"), None)
+        sensitivity = (get_measurement_sensitivity(run_id)
+                       if run["kind"] == "flexibility_assessment" and run["status"] == "succeeded"
+                       and "seed" in run and operational and operational.get("sustained_kw") else None)
         report = make_report(run, dataset, site, quality_report=quality,
-                             recommendation=recommendation)
+                             recommendation=recommendation,
+                             measurement_sensitivity=sensitivity)
         if format == "markdown":
             return PlainTextResponse(render_markdown(report), media_type="text/markdown")
         if format != "json":

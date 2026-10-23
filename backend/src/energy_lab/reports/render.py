@@ -36,6 +36,19 @@ def render_markdown(report: dict) -> str:
         lines += ["## Optimization", "", f"Solver status: {optimization['status']}  ",
                   f"Termination: {optimization['termination']}  ",
                   f"Solver version: {optimization['solver_version']}", ""]
+    stress = report["sections"].get("stress_study")
+    if stress:
+        outcome = stress["outcome"]
+        lines += ["## Declared synthetic stress study", "",
+                  outcome["evidence_label"], "",
+                  f"Status: {outcome['status']}  ",
+                  f"Selected candidate: {outcome['selected_source'] or 'none'}  ",
+                  f"Schedule run: {stress['schedule_run_id'] or 'unavailable'}", ""]
+        for item in outcome["evaluation"]:
+            peak = f"{item['peak_import_kw']:.6g} kW" if item["peak_import_kw"] is not None else "unavailable"
+            lines.append(f"- {item['scenario_id']}: {item['status']}; peak import {peak}; "
+                         f"{item['reason'] or 'no replay failure'}")
+        lines.append("")
     if report["sections"].get("recommendation"):
         recommendation = report["sections"]["recommendation"]
         lines += ["## Recommendation", "", recommendation.get("action") or recommendation.get("reason", "No action"), ""]
@@ -44,6 +57,17 @@ def render_markdown(report: dict) -> str:
     lines += ["## Next measurements", ""]
     measurements = report["sections"].get("next_measurements") or []
     lines += [f"- {item}" for item in measurements] if measurements else ["No quality report is attached to this run."]
+    sensitivity = report["sections"].get("measurement_sensitivity")
+    if sensitivity:
+        lines += ["", "### Synthetic model sensitivity", "",
+                  sensitivity["result"]["limitation"], ""]
+        for item in sensitivity["result"]["candidates"]:
+            rank = f"rank {item['rank']}" if item["rank"] is not None else "no distinction"
+            shortfall = (f"{item['maximum_response_shortfall_kw']:.6g} kW"
+                         if item["maximum_response_shortfall_kw"] is not None else "unknown")
+            lines.append(f"- {item['measurement']}: {rank}; {item['failed_count']}/{item['scenario_count']} "
+                         f"replay failures; maximum response shortfall {shortfall}; "
+                         f"declared range {item['declared_range']}; burden unknown")
     lines += ["", "## Limitations", ""] + [f"- {item}" for item in report["limitations"]]
     lines += ["", "## Reproducibility", "", f"Report ID: `{report['report_id']}`", ""]
     return "\n".join(lines)

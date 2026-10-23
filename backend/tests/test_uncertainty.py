@@ -29,6 +29,12 @@ class StressTests(unittest.TestCase):
         self.assertIsNone(result.tested_reliable_kw)
         self.assertIsNone(result.wilson_lower_95)
         self.assertFalse(result.outcomes[1].success)
+        derated = score_commitment(site, truth, baseline, committed,
+                                   (StressSpec("derated", battery_discharge_factor=0.5),),
+                                   seed=1, promised_kw=5, direction="down", start_index=0,
+                                   duration_intervals=1)
+        self.assertFalse(derated.outcomes[0].success)
+        self.assertIn("battery power rating exceeded", derated.outcomes[0].failure_reason)
 
     def test_calibrated_label_requires_sampled_holdout(self):
         intervals = make_intervals(datetime(2026, 1, 1, tzinfo=timezone.utc), 1, 15)
