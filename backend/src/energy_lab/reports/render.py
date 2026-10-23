@@ -36,6 +36,16 @@ def render_markdown(report: dict) -> str:
         lines += ["## Optimization", "", f"Solver status: {optimization['status']}  ",
                   f"Termination: {optimization['termination']}  ",
                   f"Solver version: {optimization['solver_version']}", ""]
+    forecast = report["sections"].get("forecast_and_uncertainty")
+    if forecast and forecast.get("methods"):
+        lines += ["## Forecast decision study", "", forecast["reason"], "",
+                  f"Decision issue: {forecast['issue_at_utc']}", ""]
+        for item in forecast["methods"]:
+            mae = f"{item['forecast_mae_kw']:.6g} kW" if item["forecast_mae_kw"] is not None else "unknown"
+            regret = f"{item['regret']:.6g} kW" if item["regret"] is not None else "unknown"
+            lines.append(f"- {item['method']}: {item['solver_status']}; MAE {mae}; "
+                         f"peak regret {regret}; {item['failure_reason'] or 'replay succeeded'}")
+        lines.append("")
     stress = report["sections"].get("stress_study")
     if stress:
         outcome = stress["outcome"]

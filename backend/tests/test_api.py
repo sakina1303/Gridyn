@@ -10,6 +10,58 @@ from energy_lab.api.app import create_app
 
 
 class APITests(unittest.TestCase):
+    def test_forecast_decision_study_records_short_history_and_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client = TestClient(create_app(Path(directory) / "lab.sqlite3"))
+            site = client.post("/v1/sites", json={
+                "name": "Synthetic forecast test", "timezone": "Asia/Kolkata",
+                "grid": {"import_limit_kw": 250, "export_limit_kw": 0},
+                "pv": {"ac_capacity_kw": 0}}).json()
+            site_id = site["site_id"]
+            dataset = client.post(f"/v1/sites/{site_id}/synthetic-datasets", json={
+                "start_utc": "2026-01-01T00:00:00Z", "interval_count": 192}).json()
+            dataset_id = dataset["dataset_id"]
+            study = client.post(f"/v1/sites/{site_id}/forecast-decision-studies", json={
+                "dataset_id": dataset_id, "issue_index": 96, "horizon_intervals": 4})
+            self.assertEqual(study.status_code, 201, study.text)
+            body = study.json()
+            self.assertEqual(body["truth_sha256"], dataset["truth_sha256"])
+            self.assertEqual([item["method"] for item in body["methods"]],
+                             ["previous_day", "random_forest"])
+            self.assertIsNotNone(body["methods"][0]["forecast_mae_kw"])
+            self.assertIsNotNone(body["methods"][0]["realized_objective"])
+            self.assertEqual(body["methods"][1]["solver_status"], "unavailable")
+            self.assertIn("seven", body["methods"][1]["failure_reason"])
+            self.assertEqual(body["reliability"], "unknown")
+            report = client.get(f"/v1/reports/{body['run_id']}")
+            self.assertEqual(report.status_code, 200, report.text)
+            self.assertEqual(report.json()["sections"]["forecast_and_uncertainty"]["methods"], body["methods"])
+            self.assertIn("Forecast decision study", client.get(
+                f"/v1/reports/{body['run_id']}?format=markdown").text)
+            outside = client.post(f"/v1/sites/{site_id}/forecast-decision-studies", json={
+                "dataset_id": dataset_id, "issue_index": 192, "horizon_intervals": 1})
+            self.assertEqual(outside.status_code, 422)
+            self.assertEqual(outside.json()["detail"]["code"], "invalid_horizon")
+
+    def test_forecast_decision_study_can_evaluate_tree_with_seven_day_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client = TestClient(create_app(Path(directory) / "lab.sqlite3"))
+            site_id = client.post("/v1/sites", json={
+                "name": "Synthetic long history", "timezone": "Asia/Kolkata",
+                "grid": {"import_limit_kw": 250, "export_limit_kw": 0},
+                "pv": {"ac_capacity_kw": 0}}).json()["site_id"]
+            dataset = client.post(f"/v1/sites/{site_id}/synthetic-datasets", json={
+                "start_utc": "2026-01-01T00:00:00Z", "interval_count": 8 * 96})
+            self.assertEqual(dataset.status_code, 201, dataset.text)
+            study = client.post(f"/v1/sites/{site_id}/forecast-decision-studies", json={
+                "dataset_id": dataset.json()["dataset_id"],
+                "issue_index": 7 * 96, "horizon_intervals": 4})
+            self.assertEqual(study.status_code, 201, study.text)
+            outcomes = study.json()["methods"]
+            self.assertTrue(all(item["training_end_utc"] == study.json()["issue_at_utc"]
+                                for item in outcomes))
+            self.assertTrue(all(item["forecast_mae_kw"] is not None for item in outcomes))
+
     def test_synthetic_setup_readiness_assessment_optimizer_report(self):
         with tempfile.TemporaryDirectory() as directory:
             client = TestClient(create_app(Path(directory) / "lab.sqlite3"))

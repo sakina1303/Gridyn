@@ -22,6 +22,7 @@ from energy_lab.data.serde import (record_from_dict, record_to_dict, schedule_fr
                                    site_from_dict, site_to_dict, truth_from_dict, truth_to_dict)
 from energy_lab.db.store import LocalStore
 from energy_lab.experiments.runner import load_spec, run_experiment
+from energy_lab.experiments.forecast_value import compare_forecast_decisions
 from energy_lab.experiments.measurement_sensitivity import assess_measurement_sensitivity
 from energy_lab.flexibility.envelope import assess_envelope
 from energy_lab.forecasting.baseline import issue_forecast
@@ -38,7 +39,7 @@ from energy_lab.scenarios.runner import compare_scenario
 from energy_lab.scenarios.schema import ScenarioConfig
 from energy_lab.scenarios.stress_aware import declared_stress_sets, select_stress_aware_schedule
 
-from .schemas import (AssessmentInput, ForecastInput, OptimizationInput, SiteCreate,
+from .schemas import (AssessmentInput, ForecastInput, ForecastStudyInput, OptimizationInput, SiteCreate,
                       ScenarioInput, ExperimentInput, SyntheticCreate, ValidateInput)
 
 
@@ -211,6 +212,36 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         payload = {"schema_version": "1", "forecast_id": forecast_id, "dataset_id": body.dataset_id,
                    "forecast": jsonable_encoder(forecast), "synthetic": data["synthetic"]}
         store.put("forecast", forecast_id, payload)
+        return payload
+
+    @app.post("/v1/sites/{site_id}/forecast-decision-studies", status_code=201)
+    def create_forecast_decision_study(site_id: str, body: ForecastStudyInput):
+        data = dataset_for(site_id, body.dataset_id)
+        if not data["synthetic"] or "truth" not in data:
+            raise _error("truth_unavailable", "decision regret requires synthetic truth for replay")
+        truth = tuple(truth_from_dict(item) for item in data["truth"])
+        if body.issue_index + body.horizon_intervals > len(truth):
+            raise _error("invalid_horizon", "issue and evaluation horizon must fit the dataset",
+                         field="horizon_intervals")
+        site = site_from_dict(data["site_snapshot"])
+        observed = tuple(record_from_dict(item) for item in data["records"])
+        future = truth[body.issue_index:body.issue_index + body.horizon_intervals]
+        outcomes = compare_forecast_decisions(site, observed, future,
+            issue_at_utc=future[0].interval.start, objective=ObjectiveConfig("peak"), seed=body.seed)
+        run_id = _new_id()
+        status = "succeeded" if any(item.realized_objective is not None for item in outcomes) else "unavailable"
+        payload = {"schema_version": "1", "run_id": run_id, "kind": "forecast_decision_study",
+                   "site_id": site_id, "dataset_id": body.dataset_id, "status": status,
+                   "synthetic": True, "truth_sha256": data["truth_sha256"],
+                   "issue_index": body.issue_index, "issue_at_utc": future[0].interval.start.isoformat(),
+                   "evaluation_end_utc": future[-1].interval.end.isoformat(),
+                   "horizon_intervals": body.horizon_intervals, "seed": body.seed,
+                   "objective_profile": "peak", "objective_unit": "kW",
+                   "methods": jsonable_encoder(outcomes),
+                   "reliability": "unknown",
+                   "limitation": "Synthetic future truth is used only for scoring and the oracle comparator; "
+                                 "field forecast accuracy and response reliability are unknown."}
+        store.put("run", run_id, payload)
         return payload
 
     @app.post("/v1/sites/{site_id}/flexibility-assessments", status_code=201)

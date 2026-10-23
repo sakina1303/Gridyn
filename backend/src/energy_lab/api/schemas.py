@@ -75,7 +75,7 @@ class SiteCreate(BaseModel):
 class SyntheticCreate(BaseModel):
     schema_version: str = "1"
     start_utc: datetime
-    interval_count: int = Field(default=96, ge=1, le=672)
+    interval_count: int = Field(default=96, ge=1, le=960)
     seed: int = 7
     weather_scenario: str = "clear"
     load_scenario: str = "normal"
@@ -100,6 +100,14 @@ class ForecastInput(BaseModel):
     issue_at_utc: datetime
     horizon_intervals: int = Field(ge=1, le=96)
     method: str = "previous_day"
+    seed: int = 7
+
+
+class ForecastStudyInput(BaseModel):
+    schema_version: str = "1"
+    dataset_id: str
+    issue_index: int = Field(default=96, ge=96)
+    horizon_intervals: int = Field(default=96, ge=1, le=96)
     seed: int = 7
 
 

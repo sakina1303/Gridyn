@@ -98,6 +98,18 @@ def make_report(run: dict, dataset: dict, site: dict, *, quality_report: dict | 
                 start, end, run["run_id"], dataset["dataset_id"], checksum,
                 "synthetic", f"fixed selected schedule replay on {item['scenario_id']}",
                 item["status"]))
+    if run.get("kind") == "forecast_decision_study":
+        for item in run["methods"]:
+            for field, unit in (("forecast_mae_kw", "kW"), ("realized_objective", "kW"),
+                                ("oracle_objective", "kW"), ("regret", "kW")):
+                if item[field] is None:
+                    continue
+                metrics.append(MetricValue(
+                    f"{item['method']}_{field}", item[field], unit,
+                    run["issue_at_utc"], run["evaluation_end_utc"], run["run_id"],
+                    dataset["dataset_id"], checksum, "synthetic",
+                    f"{item['method']} issued at {run['issue_at_utc']}; peak objective replay on held-out synthetic truth",
+                    "evaluated" if item["failure_reason"] is None else "unavailable"))
     sections = {
         "site_and_period": {"site_name": site.get("name"), "site_id": site["site_id"],
                             "timezone": site["config"]["timezone"], "start_utc": start, "end_utc": end,
@@ -107,8 +119,12 @@ def make_report(run: dict, dataset: dict, site: dict, *, quality_report: dict | 
                            "readiness": quality_report.get("readiness") if quality_report else None},
         "asset_constraints": site["config"],
         "baseline": {"label": "B0", "definition": "Earliest declared EV/pump service, minimum HVAC power, battery idle."},
-        "forecast_and_uncertainty": {"status": "unavailable_in_this_run",
-                                     "reliability": "unknown", "reason": "No calibrated held-out reliability is attached."},
+        "forecast_and_uncertainty": ({"status": run["status"], "reliability": "unknown",
+                                      "methods": run["methods"], "reason": run["limitation"],
+                                      "issue_at_utc": run["issue_at_utc"]}
+                                     if run.get("kind") == "forecast_decision_study" else
+                                     {"status": "unavailable_in_this_run", "reliability": "unknown",
+                                      "reason": "No calibrated held-out reliability is attached."}),
         "envelope": run.get("passes") if run.get("kind") == "flexibility_assessment" else None,
         "optimization": {"status": run.get("solver_status"), "termination": run.get("solver_termination"),
                          "solver_version": run.get("solver_version"),
