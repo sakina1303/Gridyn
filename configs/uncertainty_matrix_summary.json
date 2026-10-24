@@ -1,0 +1,181 @@
+{
+  "claim_status": {
+    "applicable_tariff_cost_regret": "unknown",
+    "external_load_forecast_benchmark": "executed_observed_load",
+    "field_flexibility_reliability": "unknown",
+    "measured_site_savings": "unknown",
+    "model_physical_stress": "executed_synthetic",
+    "operator_acceptance": "unknown",
+    "thermal_comfort_response": "unknown"
+  },
+  "input_sha256": {
+    "backend/src/energy_lab/experiments/synthetic_matrix.py": "df85a20a382185273fbe4ee7ce99b5c050f9268704f480d78147c2886ebe9921",
+    "backend/src/energy_lab/uncertainty/scenarios.py": "adb8c293f0805446ae100ee929b54371cbd54e8c4d92c5034d82e33396cc80af",
+    "configs/experiments/paired_observation_stress.json": "33cf773f8f6c8051db23725b702da796372a73e66b728c9fb7006311d39fb1c2",
+    "configs/public_benchmarks/iblend_academic_summary.json": "26bd411d74f5c7797885f9176ffc4ecc4bcc082e3524995a4272c4818ee252a4"
+  },
+  "limitations": [
+    "A public meter from another building cannot validate this site's flexibility delivery.",
+    "The physical matrix uses a declared fixed schedule and synthetic disturbances.",
+    "Paired observation runs use another synthetic site without PV or flexible service logs.",
+    "Thermal comfort, tariff economics, seasonal coverage and operator acceptance require separate evidence."
+  ],
+  "paired_observation": {
+    "by_variant": {
+      "bias-02": {
+        "delivered": 3
+      },
+      "bias-05": {
+        "delivered": 3
+      },
+      "bias-10": {
+        "delivered": 3
+      },
+      "block-1h": {
+        "abstained": 3
+      },
+      "clean": {
+        "delivered": 3
+      },
+      "coarse-30m": {
+        "abstained": 3
+      },
+      "missing-05": {
+        "abstained": 3
+      },
+      "missing-20": {
+        "abstained": 3
+      },
+      "missing-40": {
+        "abstained": 3
+      },
+      "missing-coarse": {
+        "abstained": 3
+      },
+      "noise-1kw": {
+        "abstained": 3
+      },
+      "noise-2kw": {
+        "abstained": 3
+      },
+      "noise-4kw": {
+        "abstained": 3
+      }
+    },
+    "evidence_label": "paired synthetic hidden truth and corrupted observation",
+    "seeds": [
+      7,
+      11,
+      19
+    ],
+    "truth_sha256_by_seed": {
+      "11": "7b397312e2cef84ec38b764dd215f42b171c67f2b13fad0892c86882c1893d15",
+      "19": "f5b05d43a09a5eb2451bd06963a16b1e623d9c659a0d5ee1da573ec79eae87fc",
+      "7": "a8c4ce139fddabad4821d31094b294cbb79f584ef0bca4a0097ce58328ce0e73"
+    },
+    "variant_count": 13
+  },
+  "public_observed_load": {
+    "complete_intervals": 3927,
+    "condition_method_summaries": 57,
+    "evidence_label": "observed building mains forecast; injected sensor stresses are synthetic",
+    "expected_intervals": 3936,
+    "held_out_days": 7,
+    "source": {
+      "article_doi": "10.6084/m9.figshare.6007637.v1",
+      "article_url": "https://springernature.figshare.com/articles/dataset/Energy_dataset_of_IIITD/6007637",
+      "collection_doi": "10.6084/m9.figshare.c.3893581.v1",
+      "license": "CC0",
+      "measured_channel": "Academic building mains power, W",
+      "selected_raw_rows_sha256": "f3bc65b6daff0f4fdb7ebc69ab1c31b632abf844ba88f13487efa33725a178ea",
+      "source_archive_md5_from_publisher": "754d5c8549fd4907a7566b3b82c849ca",
+      "source_archive_md5_verified_locally": false,
+      "source_file_id": 10797959,
+      "source_member": "energy_dataset/acad_build_mains.csv",
+      "source_rows_in_window": 59017,
+      "source_timezone": "Asia/Kolkata"
+    },
+    "target": "metered_building_load_kw"
+  },
+  "schema_version": "1",
+  "synthetic_physical": {
+    "by_factor": {
+      "EV arrival": {
+        "baseline_infeasible": 54
+      },
+      "EV departure": {
+        "candidate_infeasible": 9,
+        "delivered": 45
+      },
+      "EV service demand": {
+        "baseline_infeasible": 54
+      },
+      "PV and SOC interaction": {
+        "candidate_infeasible": 13,
+        "delivered": 41
+      },
+      "PV truth deviation": {
+        "candidate_infeasible": 4,
+        "delivered": 50
+      },
+      "battery discharge rating": {
+        "candidate_infeasible": 12,
+        "delivered": 42
+      },
+      "control": {
+        "delivered": 18
+      },
+      "high initial battery SOC": {
+        "candidate_infeasible": 12,
+        "delivered": 42
+      },
+      "initial battery SOC": {
+        "candidate_infeasible": 12,
+        "delivered": 42
+      },
+      "load magnitude": {
+        "baseline_infeasible": 36,
+        "delivered": 66,
+        "overstated": 6
+      },
+      "load peak timing": {
+        "baseline_infeasible": 18,
+        "candidate_infeasible": 18,
+        "delivered": 72
+      },
+      "outdoor temperature": {
+        "not_evaluable": 54
+      },
+      "pump runtime": {
+        "baseline_infeasible": 54
+      },
+      "tariff and EV interaction": {
+        "not_evaluable": 18
+      }
+    },
+    "directions": [
+      "down",
+      "up"
+    ],
+    "evidence_label": "declared synthetic model stress; field reliability unknown",
+    "response_durations_hours": [
+      1,
+      2,
+      4
+    ],
+    "row_count": 792,
+    "seeds": [
+      7,
+      11,
+      19
+    ],
+    "statuses": {
+      "baseline_infeasible": 216,
+      "candidate_infeasible": 80,
+      "delivered": 418,
+      "not_evaluable": 72,
+      "overstated": 6
+    }
+  },
+  "title": "FlexGrid uncertainty evidence matrix"
+}

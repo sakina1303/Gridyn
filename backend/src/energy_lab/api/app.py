@@ -87,6 +87,11 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         path = Path(__file__).resolve().parents[4] / "configs" / "public_benchmarks" / "iblend_academic_summary.json"
         return json.loads(path.read_text(encoding="utf-8"))
 
+    @app.get("/v1/uncertainty-matrix")
+    def get_uncertainty_matrix():
+        path = Path(__file__).resolve().parents[4] / "configs" / "uncertainty_matrix_summary.json"
+        return json.loads(path.read_text(encoding="utf-8"))
+
     @app.post("/v1/sites", status_code=201)
     def create_site(body: SiteCreate):
         site_id = _new_id()

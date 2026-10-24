@@ -10,6 +10,17 @@ from energy_lab.api.app import create_app
 
 
 class APITests(unittest.TestCase):
+    def test_uncertainty_matrix_exposes_evidence_and_unknown_claims(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client = TestClient(create_app(Path(directory) / "lab.sqlite3"))
+            response = client.get("/v1/uncertainty-matrix")
+            self.assertEqual(response.status_code, 200, response.text)
+            body = response.json()
+            self.assertEqual(body["synthetic_physical"]["row_count"], 792)
+            self.assertEqual(body["paired_observation"]["variant_count"], 13)
+            self.assertEqual(body["public_observed_load"]["target"], "metered_building_load_kw")
+            self.assertEqual(body["claim_status"]["field_flexibility_reliability"], "unknown")
+
     def test_public_benchmark_is_observed_load_only(self):
         with tempfile.TemporaryDirectory() as directory:
             client = TestClient(create_app(Path(directory) / "lab.sqlite3"))

@@ -4,6 +4,8 @@
 
 A separate [public I-BLEND building-meter benchmark](54_uncertainty_experiment_matrix.md#current-execution-boundary) tests observed-load forecasting on openly released CC0 campus measurements from IIIT Delhi. It is an external benchmark, not an operator-approved FlexGrid pilot: it lacks verified site import, PV, flexible-asset service and control logs, a tariff and operator sign-off. Its observed load values must not be relabeled as a delivered flexibility response.
 
+The [uncertainty matrix](54_uncertainty_experiment_matrix.md#current-execution-boundary) now has an executable synthetic physical stress audit for 1/2/4-hour up/down responses and a paired observation audit. These exercise the model's rejection and abstention paths. They do not replace the consented site, asset, and operator evidence listed below.
+
 ## Inputs needed from a pilot site
 
 1. A named facility contact, permission to use the data for this research, and agreed retention/access rules. Do not place private pilot data in the public Git repository.

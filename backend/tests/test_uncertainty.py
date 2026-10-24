@@ -3,14 +3,33 @@
 import unittest
 from datetime import datetime, timezone
 
-from energy_lab.core.assets import BatteryConfig, GridConfig, PVConfig, SiteConfig
-from energy_lab.core.time import make_intervals
+from energy_lab.core.assets import BatteryConfig, EVConfig, GridConfig, PVConfig, PumpConfig, SiteConfig
+from energy_lab.core.time import TimeWindow, make_intervals
 from energy_lab.simulation.engine import CandidateScheduleStep, TruthDisturbance
 from energy_lab.uncertainty.calibration import score_commitment
-from energy_lab.uncertainty.scenarios import StressSpec
+from energy_lab.uncertainty.scenarios import StressSpec, apply_stress
 
 
 class StressTests(unittest.TestCase):
+    def test_ev_pump_and_temperature_stress_remain_explicit(self):
+        intervals = make_intervals(datetime(2026, 1, 1, tzinfo=timezone.utc), 4, 15)
+        window = TimeWindow(intervals[0].start, intervals[-1].end)
+        site = SiteConfig("s", "Asia/Kolkata", GridConfig(20, 0), PVConfig(0),
+                          evs=(EVConfig("ev", window, 1, 4),),
+                          pumps=(PumpConfig("pump", window, 2, 0.25),))
+        truth = tuple(TruthDisturbance(item, 0, 1, 1, outdoor_temperature_c=30)
+                      for item in intervals)
+        stressed_site, stressed_truth = apply_stress(site, truth,
+            StressSpec("timing", ev_arrival_shift_intervals=1,
+                       ev_departure_shift_intervals=-1, pump_runtime_factor=2,
+                       outdoor_temperature_delta_c=2))
+        self.assertEqual(stressed_site.evs[0].window.start, intervals[1].start)
+        self.assertEqual(stressed_site.evs[0].window.end, intervals[-1].start)
+        self.assertEqual(stressed_site.pumps[0].required_runtime_hours, 0.5)
+        self.assertEqual(stressed_truth[0].outdoor_temperature_c, 32)
+        with self.assertRaises(ValueError):
+            StressSpec("invalid", ev_arrival_shift_intervals=1.5)
+
     def test_physical_failure_counts_and_confidence_is_unknown(self):
         intervals = make_intervals(datetime(2026, 1, 1, tzinfo=timezone.utc), 2, 15)
         site = SiteConfig("s", "Asia/Kolkata", GridConfig(100, 0), PVConfig(0),
