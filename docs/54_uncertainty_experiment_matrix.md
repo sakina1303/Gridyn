@@ -15,3 +15,21 @@ Each row uses a paired synthetic hidden truth and corrupted/limited observation 
 | Tariff uncertainty | Physical truth unchanged; stale/alternative tariff | Cost schedule | Cost regret under applicable tariff; no physical reliability change | Wrong economic recommendation |
 
 Run one-factor sweeps first, then high-risk interactions (PV+SOC, EV+tariff, missingness+resolution). Each factor has at least three severity levels plus clean control and multiple fixed seeds. Calibrate intervals on train/calibration periods only; report held-out empirical coverage by season. Failure criterion: a confident firm response with critical/service violation or repeated overstatement beyond declared tolerance. Stress-only results are labeled conditional.
+
+## Current execution boundary
+
+The executable studies cover different parts of this matrix. A public observed-data benchmark uses the [I-BLEND Academic building meter](https://springernature.figshare.com/articles/dataset/Energy_dataset_of_IIITD/6007637) (CC0, IIIT Delhi). Its 41-day, one-minute W sample is strictly aggregated into complete 15-minute kW intervals. Seven later complete days are held out for issue-time forecasting; clean and three-seed severity sweeps cover random missingness (5/20/40%), signed bias (2/5/10%), noise (2/5/10% of mean load), outliers (1/3/5%), and 1/4/12-interval gaps. The reproducible command is `PYTHONPATH=backend/src .venv/bin/python scripts/run_public_iblend_benchmark.py`. Results are **observed building mains forecast diagnostics under injected synthetic perturbations**. The source is one building meter, not verified site import or an asset-service trace.
+
+| Matrix factor | Current executable evidence | Still needed for the stated matrix outcome |
+|---|---|---|
+| PV forecast error | Synthetic PV stress replay and forecast-decision study | Matched observed site PV plus load, availability/curtailment channel, chronological forecast coverage |
+| Load forecast error / timing | Public observed building-load issue-time forecast error and peak error; synthetic decision regret | Whole-site import and asset-service logs for realized flexibility decision regret |
+| Missing values | Public observed-load injection with abstention; paired synthetic envelope studies | Field missingness mechanism, calibrated response overstatement and interval coverage |
+| Noise, bias, outliers | Public observed-load injection and forecast error; synthetic observation stress protocol | Meter fault labels and detection precision/recall against verified faults |
+| Initial SOC | Declared synthetic low-SOC schedule replay | Timestamped battery SOC and AC power, initial-state uncertainty calibration |
+| EV timing | Synthetic service constraints and required-energy stresses | Observed arrivals/departures and energy delivered by departure |
+| Weather / temperature | Synthetic PV/weather scenarios; conservative HVAC power bounds | Measured indoor comfort and weather forecast error; no comfort validation yet |
+| Asset availability | Declared synthetic battery derating replay | Availability logs, outages, ratings and service delivery |
+| Tariff | Physical simulation stays tariff independent | Verified applicable tariff order, category and time-effective bill rules before any cost-regret claim |
+
+The public benchmark does not close the real-site pilot gate. Statistical flexibility reliability, seasonal interval coverage, measured savings and operator acceptance remain **Unknown**. Do not interpret the repeated perturbation seeds as independent observed days; the clean control uses seven distinct held-out days.

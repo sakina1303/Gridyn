@@ -15,6 +15,7 @@ from energy_lab.simulation.observer import ObservedRecord
 
 
 POWER_SIGNALS = frozenset({
+    "metered_building_load_kw",
     "pv_available_kw", "pv_used_kw", "critical_load_kw", "fixed_load_kw",
     "flexible_load_kw", "grid_import_kw", "grid_export_kw",
     "battery_charge_kw", "battery_discharge_kw", "ev_power_kw",

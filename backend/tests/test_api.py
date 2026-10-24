@@ -10,6 +10,17 @@ from energy_lab.api.app import create_app
 
 
 class APITests(unittest.TestCase):
+    def test_public_benchmark_is_observed_load_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client = TestClient(create_app(Path(directory) / "lab.sqlite3"))
+            response = client.get("/v1/public-benchmarks/iblend-academic")
+            self.assertEqual(response.status_code, 200, response.text)
+            body = response.json()
+            self.assertEqual(body["source"]["license"], "CC0")
+            self.assertEqual(body["aggregation"]["complete_intervals"], 3927)
+            self.assertEqual(body["target"], "metered_building_load_kw")
+            self.assertIn("No site-wide import", body["limitations"][0])
+
     def test_forecast_decision_study_records_short_history_and_report(self):
         with tempfile.TemporaryDirectory() as directory:
             client = TestClient(create_app(Path(directory) / "lab.sqlite3"))

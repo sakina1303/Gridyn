@@ -67,7 +67,7 @@ def assess_readiness(
     else:
         claims.append(ClaimReadiness("measured_15min_peak", "usable", "Complete observed 15-minute import series supports the study-period measured peak."))
 
-    forecast_source = grid or quality.for_quantity("fixed_load_kw")
+    forecast_source = grid or quality.for_quantity("metered_building_load_kw") or quality.for_quantity("fixed_load_kw")
     days = (quality.expected_window.end - quality.expected_window.start).total_seconds() / 86400
     if forecast_source is None:
         claims.append(ClaimReadiness("historical_load_forecast", "insufficient", "No load or import series is present.", "Collect timestamped site import or load readings."))

@@ -11,7 +11,7 @@ from energy_lab.core.units import finite_number
 from energy_lab.simulation.observer import ObservedRecord
 
 
-TARGETS = frozenset({"pv_available_kw", "critical_load_kw", "fixed_load_kw"})
+TARGETS = frozenset({"pv_available_kw", "critical_load_kw", "fixed_load_kw", "metered_building_load_kw"})
 METHODS = frozenset({"previous_day", "previous_week", "hour_day_mean", "calendar_ridge"})
 
 
