@@ -1,1 +1,1 @@
--e ./backend
+energy-lab @ ./backend
