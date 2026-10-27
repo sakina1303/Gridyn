@@ -115,6 +115,12 @@ class APITests(unittest.TestCase):
             self.assertEqual(assessment.status_code, 201, assessment.text)
             self.assertEqual(assessment.json()["status"], "succeeded")
             self.assertIsNone(client.get(f"/v1/runs/{assessment.json()['run_id']}").json()["reliable_kw"])
+            decision = client.get(f"/v1/runs/{assessment.json()['run_id']}/decision-brief")
+            self.assertEqual(decision.status_code, 200, decision.text)
+            self.assertEqual(decision.json()["status"], "simulation_only")
+            self.assertEqual(decision.json()["operational_use"], "do_not_dispatch")
+            self.assertIsNone(decision.json()["field_reliability"])
+            self.assertEqual(decision.json()["response"]["duration_hours"], .25)
             sensitivity = client.get(
                 f"/v1/runs/{assessment.json()['run_id']}/measurement-sensitivity")
             self.assertEqual(sensitivity.status_code, 200, sensitivity.text)

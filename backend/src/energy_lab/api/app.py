@@ -15,6 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from energy_lab.advisory.decision import build_decision_brief
 from energy_lab.core.time import make_intervals
 from energy_lab.data.ingest import DataIngestionError, ingest_csv_text
 from energy_lab.data.quality import assess_quality
@@ -324,6 +325,15 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     @app.get("/v1/runs/{run_id}")
     def get_run(run_id: str):
         return stored("run", run_id)
+
+    @app.get("/v1/runs/{run_id}/decision-brief")
+    def get_decision_brief(run_id: str):
+        run = stored("run", run_id)
+        if run.get("kind") != "flexibility_assessment":
+            raise _error("assessment_unavailable", "a flexibility assessment is required", 409)
+        data = stored("dataset", run["dataset_id"])
+        site = site_from_dict(data["site_snapshot"])
+        return build_decision_brief(run, site)
 
     @app.get("/v1/runs/{run_id}/measurement-sensitivity")
     def get_measurement_sensitivity(run_id: str):

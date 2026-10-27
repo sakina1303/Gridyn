@@ -30,6 +30,7 @@ class MeasurementSensitivityTests(unittest.TestCase):
                          {"Critical and fixed load", "Battery state of charge",
                           "Battery discharge availability"})
         self.assertTrue(all(item.burden is None for item in result.candidates))
+        self.assertTrue(all(item.collection_request for item in result.candidates))
         self.assertIn("field priority unvalidated", result.limitation)
         self.assertTrue(all(item.scenario_count == 3 for item in result.candidates))
 

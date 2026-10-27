@@ -22,6 +22,7 @@ class MeasurementSensitivity:
     failed_count: int
     maximum_response_shortfall_kw: float | None
     rank: int | None
+    collection_request: str
     burden: None = None
     evidence_label: str = "synthetic model sensitivity, not field value"
 
@@ -77,6 +78,13 @@ def assess_measurement_sensitivity(
         shortfall = max(0.0, promised_kw - min(delivered)) if delivered else None
         rows.append((name, declared_range, len(specs), failures, shortfall))
     rows.sort(key=lambda item: (-item[3], -(item[4] or 0), item[0]))
+    collection_requests = {
+        "PV output": "Check inverter output and available generation or curtailment logs at 15-minute resolution.",
+        "Critical and fixed load": "Check site import and submetered load readings at 15-minute resolution.",
+        "Battery state of charge": "Check timestamped battery SOC and AC charge/discharge power.",
+        "Battery discharge availability": "Check discharge ratings, derating events and availability logs.",
+        "EV service requirement": "Check arrival, departure and energy delivered for each charging session.",
+    }
     ranked_items: list[MeasurementSensitivity] = []
     previous_key: tuple[int, float] | None = None
     current_rank = 0
@@ -86,7 +94,8 @@ def assess_measurement_sensitivity(
             current_rank = index + 1
         rank = current_rank if failures or (shortfall is not None and shortfall > 1e-6) else None
         ranked_items.append(MeasurementSensitivity(name, declared_range, count,
-                                                   failures, shortfall, rank))
+                                                   failures, shortfall, rank,
+                                                   collection_requests[name]))
         previous_key = key
     ranked = tuple(ranked_items)
     return MeasurementSensitivityResult(promised_kw, direction, ranked)

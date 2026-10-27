@@ -68,6 +68,7 @@ export default function App() {
   const [quality, setQuality] = useState(null)
   const [observations, setObservations] = useState([])
   const [assessment, setAssessment] = useState(null)
+  const [decisionBrief, setDecisionBrief] = useState(null)
   const [measurementSensitivity, setMeasurementSensitivity] = useState(null)
   const [forecast, setForecast] = useState(null)
   const [forecastStudy, setForecastStudy] = useState(null)
@@ -203,7 +204,7 @@ export default function App() {
       setScenarioBatteryLimit('')
       localStorage.removeItem('energy_lab_dataset_id')
       localStorage.removeItem('energy_lab_scenario_label')
-      setDataset(null); setQuality(null); setObservations([]); setAssessment(null); setOptimization(null)
+      setDataset(null); setQuality(null); setObservations([]); setAssessment(null); setDecisionBrief(null); setOptimization(null)
       setForecast(null); setForecastStudy(null); setRecommendation(null); setScenario(null); setStressOutcome(null); setMeasurementSensitivity(null); setReport(null); setLatestRunId(null); setLatestVisibleRunId(null)
       setScenarioLabel('Not selected')
       setTab('readiness')
@@ -217,7 +218,7 @@ export default function App() {
         start_utc: datasetForm.start, interval_count: Number(datasetForm.count), seed: Number(datasetForm.seed),
         weather_scenario: datasetForm.weather, load_scenario: datasetForm.load,
       })
-      setDataset(created); setQuality(null); setAssessment(null); setOptimization(null)
+      setDataset(created); setQuality(null); setAssessment(null); setDecisionBrief(null); setOptimization(null)
       setForecast(null); setForecastStudy(null); setRecommendation(null); setScenario(null); setStressOutcome(null); setMeasurementSensitivity(null); setReport(null); setLatestRunId(null); setLatestVisibleRunId(null)
       const label = `${titleCase(datasetForm.weather)} PV / ${titleCase(datasetForm.load)} load`
       setScenarioLabel(label)
@@ -236,7 +237,7 @@ export default function App() {
       form.append('source', file.name)
       const created = await api(`/v1/sites/${siteId}/datasets`, { method: 'POST', body: form })
       const meta = await api(`/v1/datasets/${created.dataset_id}`)
-      setDataset(meta); setQuality(null); setAssessment(null); setOptimization(null)
+      setDataset(meta); setQuality(null); setAssessment(null); setDecisionBrief(null); setOptimization(null)
       setForecast(null); setForecastStudy(null); setRecommendation(null); setScenario(null); setStressOutcome(null); setMeasurementSensitivity(null); setReport(null); setLatestRunId(null); setLatestVisibleRunId(null)
       setScenarioLabel('Observed dataset')
       localStorage.setItem('energy_lab_scenario_label', 'Observed dataset')
@@ -261,7 +262,11 @@ export default function App() {
         dataset_id: datasetId, start_index: Number(assessmentForm.start),
         duration_intervals: Number(assessmentForm.duration), direction: assessmentForm.direction,
       })
-      setAssessment(await api(`/v1/runs/${response.run_id}`))
+      const [runResult, brief] = await Promise.all([
+        api(`/v1/runs/${response.run_id}`), api(`/v1/runs/${response.run_id}/decision-brief`),
+      ])
+      setAssessment(runResult)
+      setDecisionBrief(brief)
       setMeasurementSensitivity(null)
       setLatestRunId(response.run_id)
       setLatestVisibleRunId(response.run_id)
@@ -486,6 +491,7 @@ export default function App() {
             <p className="footnote">Inferred signals: none in this inventory. Missing signals remain Unknown.</p>
           </Panel>
           {quality && <Panel eyebrow="CLAIM READINESS" title="What this data supports"><div className="claim-list">{qualityClaims.map(item => <div className="claim" key={item.claim}><span className={`state ${item.state}`}>{item.state.replaceAll('_', ' ')}</span><div><strong>{item.claim.replaceAll('_', ' ')}</strong><p>{item.explanation}</p>{item.next_measurement && <small>Next measurement: {item.next_measurement}</small>}</div></div>)}</div><p className="footnote">{qualityIssues.length} quality issue{qualityIssues.length === 1 ? '' : 's'} recorded. Raw values are retained.</p></Panel>}
+          <Panel eyebrow="FIELD STUDY / GATE" title="Prepare an advisory pilot"><p className="intro">A real site needs permission, measured records, and operator review. The current app has no field-validation result or equipment control.</p><div className="claim-list">{['Site permission and data handling agreement', '15-minute site and asset records with units and timestamps', 'Operator-approved critical loads, service and comfort limits', 'Chronological shadow replay against held-out observations', 'Independent operator review of failures and recommendations'].map(item => <div className="claim" key={item}><span className="state insufficient">Not verified</span><div><strong>{item}</strong></div></div>)}</div><p className="footnote">Keep private pilot data outside the public repository. Measured savings, field reliability and operator acceptance remain Unknown until this gate is completed.</p></Panel>
         </>}
         {tab === 'overview' && <Panel eyebrow="03 / PHYSICAL SERIES" title="Energy overview" aside={<span className="tag">Average kW per interval</span>}>
           {!dataset ? <Notice>Select a dataset first.</Notice> : <><p className="intro">These are analyst-visible observations. The plot does not substitute missing intervals or imply measured benefits for synthetic data.</p><LinePlot series={chartSeries} labels="PV available, critical and fixed load by interval in kW" /></>}
@@ -500,7 +506,15 @@ export default function App() {
             {assessment.reason && <Notice tone="error">{assessment.reason}</Notice>}
             <div className="detail-grid"><div><span>RECOVERY REQUIREMENT</span><strong>{assessment.recovery_import_delta_kwh == null ? 'Unknown' : `${fmt(assessment.recovery_import_delta_kwh)} kWh import delta`}</strong></div><div><span>OPERATIONAL CONSTRAINTS</span><strong>Critical service, asset windows, grid limits, terminal SOC</strong></div><div><span>METHOD</span><strong>{assessment.method || 'Unknown'}</strong></div></div>
             {assessment.status === 'succeeded' && operationalPass?.sustained_kw > 0 && <div className="actions"><button className="secondary" onClick={inspectMeasurementSensitivity} disabled={!!busy}>Inspect next-measurement sensitivity</button></div>}
-            {measurementSensitivity && <><div className="section-rule"><span>DECLARED SYNTHETIC BOUNDS</span></div><p className="footnote">{measurementSensitivity.result.ranking_basis}. {measurementSensitivity.result.limitation}. A rank here is a model diagnostic, not a sensor purchase recommendation.</p><div className="claim-list">{measurementSensitivity.result.candidates.map(item => <div className="claim" key={item.measurement}><span className="state usable_with_limitations">{item.rank == null ? 'No distinction' : `Rank ${item.rank}`}</span><div><strong>{item.measurement}</strong><p>{item.declared_range} · {item.failed_count}/{item.scenario_count} replay failures</p><small>Maximum response shortfall: {item.maximum_response_shortfall_kw == null ? 'Unknown' : `${fmt(item.maximum_response_shortfall_kw)} kW`} · Measurement burden: Unknown</small></div></div>)}</div></>}
+            {measurementSensitivity && <><div className="section-rule"><span>WHAT TO CHECK FIRST IN THIS MODEL</span></div><p className="footnote">{measurementSensitivity.result.ranking_basis}. {measurementSensitivity.result.limitation}. Check the records below with the operator before buying a sensor; model rank is not field priority.</p><div className="claim-list">{measurementSensitivity.result.candidates.map(item => <div className="claim" key={item.measurement}><span className="state usable_with_limitations">{item.rank == null ? 'No distinction' : `Rank ${item.rank}`}</span><div><strong>{item.measurement}</strong><p>{item.collection_request}</p><p>{item.declared_range} · {item.failed_count}/{item.scenario_count} replay failures</p><small>Maximum response shortfall: {item.maximum_response_shortfall_kw == null ? 'Unknown' : `${fmt(item.maximum_response_shortfall_kw)} kW`} · Collection effort/cost: operator estimate needed</small></div></div>)}</div></>}
+          </Panel>}
+          {decisionBrief && <Panel eyebrow="DECISION / EVIDENCE" title="What can you conclude?" aside={<Status tone="synthetic">Synthetic study</Status>}>
+            <Notice tone={decisionBrief.status === 'simulation_only' ? 'info' : 'error'}>{decisionBrief.explanation} <strong>Do not dispatch equipment from this result.</strong></Notice>
+            <div className="metric-row"><Metric label="Tested response" value={decisionBrief.response.sustained_kw == null ? 'No validated response' : `${fmt(decisionBrief.response.sustained_kw)} kW ${decisionBrief.response.direction}`} /><Metric label="Duration" value={decisionBrief.response.duration_hours == null ? 'Unknown' : `${fmt(decisionBrief.response.duration_hours, 2)} h`} /><Metric label="Field reliability" value="Unknown" /><Metric label="Binding constraint" value="Unknown" note={decisionBrief.binding_constraint_reason} /></div>
+            {decisionBrief.failure_reason && <p className="footnote">Reason: {decisionBrief.failure_reason}</p>}
+            <div className="section-rule"><span>WHAT THE MODEL CHECKED</span></div><p className="report-copy">{decisionBrief.constraints_checked.join(' · ')}</p>
+            <div className="section-rule"><span>WHAT TO MEASURE BEFORE A PILOT</span></div><div className="claim-list">{decisionBrief.next_measurements.map(item => <div className="claim" key={item.signal}><span className="state insufficient">Needed</span><div><strong>{item.signal}</strong><p>{item.request}</p><small>Collection effort and cost: Unknown · Verify with the facility operator</small></div></div>)}</div>
+            <p className="footnote">Run {shortId(decisionBrief.source_run_id)} · Dataset {shortId(decisionBrief.dataset_id)}. The synthetic sensitivity ranking below identifies model vulnerabilities; it does not estimate the benefit or cost of a sensor.</p>
           </Panel>}
         </>}
         {tab === 'forecasts' && <Panel eyebrow="05 / ISSUE-TIME CONTRACT" title="Forecasts"><p className="intro">Previous-day persistence uses only observations available by the issue time. A minimum of one preceding day at 15-minute resolution is needed for this view. Metered building load is a separate observed channel; it does not establish whole-site grid import or controllable demand.</p>{!dataset ? <Notice>Select a dataset first.</Notice> : <><button className="primary" onClick={makeForecast} disabled={!!busy}>Forecast {hasSignal(['metered_building_load_kw']) ? 'metered building load' : 'fixed load'} for day 2</button>{forecast && <><div className="metric-row top-gap"><Metric label="Model" value={forecast.forecast.method} /><Metric label="Target" value={titleCase(forecast.forecast.target)} /><Metric label="Training observations" value={forecast.forecast.training_count} /><Metric label="Issued" value={forecast.forecast.issued_at_utc?.slice(0, 16)} /></div><LinePlot series={[{ name: 'Issued forecast', color: '#79a7e7', values: forecast.forecast.values_kw }]} labels="Issued forecast in kW" /></>}</>}</Panel>}
