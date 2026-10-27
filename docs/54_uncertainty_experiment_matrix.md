@@ -37,3 +37,5 @@ The executable studies cover different parts of this matrix. A public observed-d
 | Tariff | Physical simulation stays tariff independent | Verified applicable tariff order, category and time-effective bill rules before any cost-regret claim |
 
 The public benchmark does not close the real-site pilot gate. Statistical flexibility reliability, seasonal interval coverage, measured savings and operator acceptance remain **Unknown**. Do not interpret the repeated perturbation seeds as independent observed days; the clean control uses seven distinct held-out days.
+
+A separate [ETSIT Building C measured load/PV forecast check](public_observed_paired.md) adds paired public signals and explicit abstentions for conflicting or negative source readings. It does not add measured asset service, delivered flexibility or Indian-site validation to this matrix.

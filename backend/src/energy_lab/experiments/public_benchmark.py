@@ -33,7 +33,7 @@ class Aggregation:
 
 
 def aggregate_minutes(rows: list[tuple[str, str]], *, start_utc: datetime,
-                      end_utc: datetime) -> Aggregation:
+                      end_utc: datetime, quantity: str = TARGET) -> Aggregation:
     """Average exactly 15 valid one-minute W readings; never fill a missing minute."""
     if start_utc.tzinfo != timezone.utc or end_utc.tzinfo != timezone.utc or end_utc <= start_utc:
         raise ValueError("start/end must be increasing UTC instants")
@@ -70,7 +70,7 @@ def aggregate_minutes(rows: list[tuple[str, str]], *, start_utc: datetime,
         values = [minutes.get(ts + minute * 60) for minute in range(15)]
         if any(value is None for value in values):
             continue
-        observed.append(ObservedRecord(interval, TARGET, sum(values) / 15000, "kW"))
+        observed.append(ObservedRecord(interval, quantity, sum(values) / 15000, "kW"))
     return Aggregation(tuple(observed), len(intervals), len(observed),
                        len(intervals) - len(observed), invalid, duplicates)
 

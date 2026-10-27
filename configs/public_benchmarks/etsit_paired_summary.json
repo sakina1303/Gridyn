@@ -1,0 +1,98 @@
+{
+  "aggregation": {
+    "complete_intervals": {
+      "building_load_kw": 3919,
+      "pv_output_kw": 1494
+    },
+    "conflicting_duplicate_minutes": {
+      "building_load_kw": 231,
+      "pv_output_kw": 63
+    },
+    "duplicate_source_minutes": {
+      "building_load_kw": 0,
+      "pv_output_kw": 0
+    },
+    "duplicate_source_rows": 59040,
+    "expected_intervals": 3936,
+    "invalid_source_rows": {
+      "building_load_kw": 231,
+      "pv_output_kw": 4137
+    },
+    "source_rows_in_window": 118080,
+    "unique_source_minutes": 59040
+  },
+  "conditions": [
+    {
+      "abstained_days": 0,
+      "evaluated_days": 7,
+      "mean_absolute_scored_peak_error_kw": 21.137523809523806,
+      "mean_mae_kw": 20.304595238095235,
+      "method": "previous_day",
+      "signal": "building_load_kw",
+      "window_slot_end": 96,
+      "window_slot_start": 0
+    },
+    {
+      "abstained_days": 1,
+      "evaluated_days": 6,
+      "mean_absolute_scored_peak_error_kw": 10.664444444444433,
+      "mean_mae_kw": 17.791212962962963,
+      "method": "previous_week",
+      "signal": "building_load_kw",
+      "window_slot_end": 96,
+      "window_slot_start": 0
+    },
+    {
+      "abstained_days": 4,
+      "evaluated_days": 3,
+      "mean_absolute_scored_peak_error_kw": 2.7653333333333343,
+      "mean_mae_kw": 2.4835333333333334,
+      "method": "previous_day",
+      "signal": "pv_output_kw",
+      "window_slot_end": 60,
+      "window_slot_start": 40
+    },
+    {
+      "abstained_days": 5,
+      "evaluated_days": 2,
+      "mean_absolute_scored_peak_error_kw": 4.094,
+      "mean_mae_kw": 3.8831999999999995,
+      "method": "previous_week",
+      "signal": "pv_output_kw",
+      "window_slot_end": 60,
+      "window_slot_start": 40
+    }
+  ],
+  "field_reliability": null,
+  "held_out_day_indices": [
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40
+  ],
+  "interval_minutes": 15,
+  "limitations": [
+    "A single Spanish campus building supplies measured load and PV output, not a FlexGrid site pilot.",
+    "One-minute power samples are arithmetic-mean proxies for each 15-minute interval; incomplete, conflicting duplicate or negative gross readings are not filled.",
+    "PV forecast scores cover only 10:00-15:00 local winter hours because nighttime PV readings include negative meter offsets; unscored hours remain unevaluated.",
+    "Grid import/export, PV availability or curtailment, battery SOC, EV/pump service and operator limits are not established.",
+    "Forecast error does not establish delivered flexibility, measured savings or field reliability for India."
+  ],
+  "period_end_utc": "2019-02-10T23:00:00+00:00",
+  "period_start_utc": "2018-12-31T23:00:00+00:00",
+  "schema_version": "1",
+  "source": {
+    "doi": "10.5281/zenodo.19006030",
+    "license": "CC BY 4.0",
+    "mirror_url": "https://gitlab.eclipse.org/eclipse-research-labs/codeco-project/datasets/energy-demand-management/-/raw/main/datasets_2019/edificio_C_pro_power_2019.csv",
+    "published_channel_description": "ETSIT Building C total electrical load and total PV generation, W at 1-minute timestamps",
+    "publisher_md5_verified": "ad32daf43040ff243c05d60d0014cc4e",
+    "source_sha256": "1560d39a8627677af98f4918662a86d3f87a7c1a9429f3b0d3ae208028a06ebc",
+    "source_timezone": "Europe/Madrid; source unix_ref UTC and local date/time UTC+1 during selected winter window",
+    "url": "https://zenodo.org/records/19006030"
+  },
+  "title": "ETSIT Building C measured load/PV forecast benchmark"
+}

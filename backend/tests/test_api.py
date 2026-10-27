@@ -132,6 +132,11 @@ class APITests(unittest.TestCase):
             self.assertEqual(assessment_report.status_code, 200, assessment_report.text)
             self.assertEqual(assessment_report.json()["sections"]["measurement_sensitivity"]["source_run_id"],
                              assessment.json()["run_id"])
+            public_pair = client.get("/v1/public-benchmarks/etsit-building-c")
+            self.assertEqual(public_pair.status_code, 200, public_pair.text)
+            self.assertEqual(public_pair.json()["aggregation"]["expected_intervals"], 3936)
+            self.assertGreater(public_pair.json()["aggregation"]["complete_intervals"]["pv_output_kw"], 0)
+            self.assertIsNone(public_pair.json()["field_reliability"])
             self.assertIn("Synthetic model sensitivity",
                           client.get(f"/v1/reports/{assessment.json()['run_id']}?format=markdown").text)
             optimized = client.post(f"/v1/sites/{site_id}/optimization-runs", json={
