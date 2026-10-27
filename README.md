@@ -1,16 +1,30 @@
-# Energy flexibility readiness lab (working label: FlexGrid)
+# Gridyn — Understand your power to shift
 
-The project name is undecided. This is an **advisory, simulation-first research prototype** for studying how much flexibility a campus or similar small energy site can reliably provide when its data are incomplete. It does not control equipment or claim measured grid, cost, or carbon benefits.
+The public React frontend currently presents an informational website and an interactive, illustrative four-step research journey. The research workspace remains in `frontend/src/App.jsx` for later use; it is not mounted by `frontend/src/main.jsx` or included in the current public bundle.
+
+Gridyn is an **advisory, simulation-first research prototype** for studying how much flexibility a campus or similar small energy site could provide when its data are incomplete. It does not control equipment or claim measured grid, cost, or carbon benefits.
 
 ## Current status
 
-The **local synthetic research app is runnable**. It includes the canonical 15-minute simulator, seeded truth and observation generation, CSV normalization and claim-specific readiness, B0/B1 baselines, simple and tree forecasts, a joint Pyomo/HiGHS sustained-response envelope, a validated cost/peak/solar-use MILP, paired stress and missing-data studies, a paired forecast-decision study with realized peak regret, a JSON experiment runner, a local SQLite-backed FastAPI service, a React interface, and a traceable Markdown/JSON report. The root page is a concise introduction with a four-step interactive product journey; `/#workspace` opens the research workspace in the same React app.
+The **local synthetic research code remains available**. It includes the canonical 15-minute simulator, seeded truth and observation generation, CSV normalization and claim-specific readiness, B0/B1 baselines, simple and tree forecasts, a joint Pyomo/HiGHS sustained-response envelope, a validated cost/peak/solar-use MILP, paired stress and missing-data studies, a paired forecast-decision study with realized peak regret, a JSON experiment runner, a local SQLite-backed FastAPI service, a preserved React research workspace, and a traceable Markdown/JSON report. The public site presents a concise introduction, interactive four-step journey, research areas, and evidence limits. The research workspace is kept in source for a later app release; the current website does not mount it.
 
-The app is advisory. It does not perform physical control. The flexibility view is explicitly a perfect-information synthetic oracle; statistical reliability remains unknown without calibrated held-out evidence. Observed CSV data can be checked for readiness and forecasted, but an observed-only dataset is not passed to the hidden-truth optimizer. The B0/B1 heuristics can report infeasibility under ramp or grid constraints rather than search for an alternative. The FlexGrid workspace includes site, EV, pump, and HVAC setup, a signal inventory, validated results, B0/B1/optimization scenario comparison on the same changed site and truth, and a traceable report. A separate stress-aware candidate selector tests fixed schedules against declared training stresses and then a distinct evaluation stress set; it is not a globally optimal robust MILP or a deployable reliability promise. The forecast-decision study compares previous-day and tree forecasts at the same issue time, scores a common synthetic future, and reports unavailable methods honestly; the tree needs seven days of prior 15-minute observations. Checked-in synthetic protocols cover missingness, one-signal restoration, and observation stress sweeps. A separate public-data benchmark reproduces observed building-load forecasting and injected sensor-stress sweeps on [I-BLEND IIIT Delhi campus meter data](https://springernature.figshare.com/articles/dataset/Energy_dataset_of_IIITD/6007637); this is not site-flexibility field validation. The executable [uncertainty matrix](docs/54_uncertainty_experiment_matrix.md) combines declared 1/2/4-hour up/down physical stresses, paired synthetic observation runs, and the public observed-load benchmark while retaining infeasible and unevaluable outcomes. A model-sensitivity view ranks response vulnerabilities under explicit PV/load/SOC/EV bounds while leaving measurement burden and field priority unknown. Long-running jobs currently execute synchronously in the local service. Real-site pilot access control, calibrated probability claims, thermal-comfort and tariff outcomes, and independent operator validation remain future work.
+The app is advisory. It does not perform physical control. The flexibility view is explicitly a perfect-information synthetic oracle; statistical reliability remains unknown without calibrated held-out evidence. Observed CSV data can be checked for readiness and forecasted, but an observed-only dataset is not passed to the hidden-truth optimizer. The B0/B1 heuristics can report infeasibility under ramp or grid constraints rather than search for an alternative. The Gridyn workspace includes site, EV, pump, and HVAC setup, a signal inventory, validated results, B0/B1/optimization scenario comparison on the same changed site and truth, and a traceable report. A separate stress-aware candidate selector tests fixed schedules against declared training stresses and then a distinct evaluation stress set; it is not a globally optimal robust MILP or a deployable reliability promise. The forecast-decision study compares previous-day and tree forecasts at the same issue time, scores a common synthetic future, and reports unavailable methods honestly; the tree needs seven days of prior 15-minute observations. Checked-in synthetic protocols cover missingness, one-signal restoration, and observation stress sweeps. A separate public-data benchmark reproduces observed building-load forecasting and injected sensor-stress sweeps on [I-BLEND IIIT Delhi campus meter data](https://springernature.figshare.com/articles/dataset/Energy_dataset_of_IIITD/6007637); this is not site-flexibility field validation. The executable [uncertainty matrix](docs/54_uncertainty_experiment_matrix.md) combines declared 1/2/4-hour up/down physical stresses, paired synthetic observation runs, and the public observed-load benchmark while retaining infeasible and unevaluable outcomes. A model-sensitivity view ranks response vulnerabilities under explicit PV/load/SOC/EV bounds while leaving measurement burden and field priority unknown. Long-running jobs currently execute synchronously in the local service. Real-site pilot access control, calibrated probability claims, thermal-comfort and tariff outcomes, and independent operator validation remain future work.
 
 A second [public observed-data check](docs/public_observed_paired.md) uses measured load and PV output from one Spanish campus building to test paired chronological forecasts. It does not imply measured site flexibility or an Indian-site result.
 
-## Start the local app
+## Start the local website
+
+Use Node.js 20+ with pnpm:
+
+```bash
+cd frontend
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Open `http://127.0.0.1:5173/`. The website is static and does not require the API.
+
+## Run the preserved research service
 
 Use Python 3.11+ and Node.js 20+ with pnpm. From the repository root:
 
@@ -20,15 +34,7 @@ python3.11 -m venv .venv
 PYTHONPATH=backend/src .venv/bin/uvicorn energy_lab.api.app:app --host 127.0.0.1 --port 8765
 ```
 
-In another terminal:
-
-```bash
-cd frontend
-pnpm install --frozen-lockfile
-pnpm dev
-```
-
-Open `http://127.0.0.1:5173/` for the introduction, then select **Open workspace**. The API binds to loopback only; Vite proxies `/v1` to port 8765. After `pnpm build`, FastAPI also serves the built client at `http://127.0.0.1:8765/`, so the Vite server is optional for normal use. Generated local metadata and experiment artifacts are under `.local/` and ignored by Git.
+The API binds to loopback only. The current public website does not call it. The preserved React workspace in `frontend/src/App.jsx` can be mounted in a later release. Generated local metadata and experiment artifacts are under `.local/` and ignored by Git.
 
 ## Run the tests
 
