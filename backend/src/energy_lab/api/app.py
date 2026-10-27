@@ -75,7 +75,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         raise RuntimeError("GRIDYN_SUPABASE_PUBLISHABLE_KEY is required for hosted mode")
     store = (HostedStore(hosted_url, hosted_key) if hosted_url else
              LocalStore(db_path or Path(os.environ.get("ENERGY_LAB_DB_PATH", ".local/energy_lab.sqlite3"))))
-    app = FastAPI(title="Energy Lab advisory API", version="0.1.0")
+    app = FastAPI(title="Gridyn advisory API", version="0.1.0")
 
     @app.middleware("http")
     async def workspace_auth(request: Request, call_next):

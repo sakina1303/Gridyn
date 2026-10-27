@@ -44,7 +44,7 @@ def main(output_dir: Path) -> dict:
             variant = result["observation_dataset_id"].removeprefix("paired-observation-stress-").removesuffix(f"-{run['seed']}")
             by_variant[variant][result["status"]] += 1
     summary = {
-        "schema_version": "1", "title": "FlexGrid uncertainty evidence matrix",
+        "schema_version": "1", "title": "Gridyn uncertainty evidence matrix",
         "input_sha256": input_hashes,
         "synthetic_physical": {"evidence_label": physical["evidence_label"],
             "directions": physical["directions"], "response_durations_hours": physical["response_durations_hours"],
@@ -76,7 +76,7 @@ def main(output_dir: Path) -> dict:
               "paired_observation_runs": observation, "public_observed_conditions": public["conditions"]}
     _write(output_dir / "uncertainty-matrix.json", detail)
     _write(output_dir / "uncertainty-matrix-summary.json", summary)
-    lines = ["# FlexGrid uncertainty evidence matrix", "",
+    lines = ["# Gridyn uncertainty evidence matrix", "",
              "This is an executable model audit, not a field pilot. Input file SHA-256 values are in the JSON summary.", "",
              "## Evidence", "",
              f"- Synthetic physical replay: {len(physical['rows'])} cases, both import-response directions, 1/2/4-hour commitments, three declared seeds.",

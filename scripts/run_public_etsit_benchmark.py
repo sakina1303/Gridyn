@@ -115,7 +115,7 @@ def run(path: Path) -> dict:
             "held_out_day_indices": list(range(34, 41)),
             "conditions": study["summaries"], "folds": study["folds"],
             "field_reliability": None,
-            "limitations": ["A single Spanish campus building supplies measured load and PV output, not a FlexGrid site pilot.",
+            "limitations": ["A single Spanish campus building supplies measured load and PV output, not a Gridyn site pilot.",
                             "One-minute power samples are arithmetic-mean proxies for each 15-minute interval; incomplete, conflicting duplicate or negative gross readings are not filled.",
                             "PV forecast scores cover only 10:00-15:00 local winter hours because nighttime PV readings include negative meter offsets; unscored hours remain unevaluated.",
                             "Grid import/export, PV availability or curtailment, battery SOC, EV/pump service and operator limits are not established.",
