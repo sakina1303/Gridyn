@@ -34,3 +34,7 @@ class LocalStore:
         with self._connect() as db:
             rows = db.execute("SELECT payload FROM objects WHERE kind=? ORDER BY created_at_utc", (kind,)).fetchall()
         return tuple(json.loads(row[0]) for row in rows)
+
+    def delete(self, kind: str, object_id: str) -> None:
+        with self._connect() as db:
+            db.execute("DELETE FROM objects WHERE kind=? AND id=?", (kind, object_id))

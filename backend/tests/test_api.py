@@ -175,7 +175,7 @@ class APITests(unittest.TestCase):
                 self.assertEqual(stress_report.status_code, 200, stress_report.text)
                 self.assertIn("Declared synthetic stress study", stress_report.text)
             if Path("frontend/dist/index.html").exists():
-                self.assertIn("FlexGrid", client.get("/").text)
+                self.assertIn("Gridyn", client.get("/").text)
             self.assertFalse(any("control" in route.path for route in create_app(Path(directory) / "other.sqlite3").routes))
 
     def test_invalid_units_and_missing_resource_have_typed_errors(self):

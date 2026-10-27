@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { api, post } from './api/client.js'
+import { api, post, downloadReport } from './api/client.js'
 import Landing from './Landing.jsx'
+import SignIn from './auth/SignIn.jsx'
+import { auth, workspaceEnabled } from './auth/client.js'
 
 const tabs = [
   ['home', 'Overview'], ['site', 'Site setup'], ['readiness', 'Data readiness'],
@@ -59,7 +61,14 @@ function LinePlot({ series, labels }) {
 }
 
 export default function App() {
-  const [showWorkspace, setShowWorkspace] = useState(() => window.location.hash === '#workspace')
+  const [showWorkspace, setShowWorkspace] = useState(() => window.location.hash === '#workspace' ||
+    new URLSearchParams(window.location.search).get('open') === 'workspace')
+  const [session, setSession] = useState(null)
+  const [authLoading, setAuthLoading] = useState(Boolean(auth))
+  const [savedSites, setSavedSites] = useState([])
+  const [savedDatasets, setSavedDatasets] = useState([])
+  const [savedRuns, setSavedRuns] = useState([])
+  const [selectedSavedRun, setSelectedSavedRun] = useState(null)
   const [tab, setTab] = useState('home')
   const [site, setSite] = useState(null)
   const [dataset, setDataset] = useState(null)
@@ -94,6 +103,7 @@ export default function App() {
     hvac: false, hvacMin: 2, hvacMax: 8,
     windowStart: '2026-01-01T05:00:00Z', windowEnd: '2026-01-01T12:00:00Z' })
   const [csvResolution, setCsvResolution] = useState('15')
+  const [uploadAuthorized, setUploadAuthorized] = useState(false)
   const [datasetForm, setDatasetForm] = useState({ start: '2026-01-01T00:00:00Z', count: 192, seed: 7,
     weather: 'clear', load: 'normal' })
   const [assessmentForm, setAssessmentForm] = useState({ start: 96, duration: 4, direction: 'down' })
@@ -103,8 +113,30 @@ export default function App() {
   const [scenarioLimit, setScenarioLimit] = useState(200)
   const [scenarioBatteryLimit, setScenarioBatteryLimit] = useState('')
 
+  const storageKey = key => `${session?.user?.id || 'local'}:${key}`
+
   useEffect(() => {
-    const syncView = () => setShowWorkspace(window.location.hash === '#workspace')
+    if (!auth) return
+    auth.auth.getSession().then(({ data }) => { setSession(data.session); setAuthLoading(false) })
+      .catch(() => setAuthLoading(false))
+    const { data: { subscription } } = auth.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession); setAuthLoading(false)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    setSavedSites([]); setSavedDatasets([]); setSavedRuns([]); setSelectedSavedRun(null)
+    setUploadAuthorized(false)
+    setSite(null); setDataset(null); setQuality(null); setObservations([]); setAssessment(null)
+    setDecisionBrief(null); setForecast(null); setForecastStudy(null); setOptimization(null)
+    setRecommendation(null); setScenario(null); setStressOutcome(null); setExperiment(null)
+    setReport(null); setLatestRunId(null); setLatestVisibleRunId(null)
+  }, [session?.user?.id])
+
+  useEffect(() => {
+    const syncView = () => setShowWorkspace(window.location.hash === '#workspace' ||
+      new URLSearchParams(window.location.search).get('open') === 'workspace')
     window.addEventListener('hashchange', syncView)
     window.addEventListener('popstate', syncView)
     return () => {
@@ -120,39 +152,52 @@ export default function App() {
   }
 
   function openSite() {
-    window.history.pushState(null, '', window.location.pathname + window.location.search)
+    window.history.pushState(null, '', window.location.pathname)
     setShowWorkspace(false)
     window.scrollTo({ top: 0 })
   }
 
   useEffect(() => {
+    if (!workspaceEnabled) return
+    if (auth && !session) return
     let active = true
     Promise.all([api('/v1/health'), api('/v1/sites')]).then(async ([, result]) => {
       if (!active) return
       setApiOnline(true)
-      const saved = localStorage.getItem('energy_lab_site_id')
+      setSavedSites(result.sites)
+      const saved = localStorage.getItem(storageKey('energy_lab_site_id'))
       const found = result.sites.find(item => item.site_id === saved) || result.sites.at(-1)
       if (found) {
         setSite(found)
         setScenarioLimit(found.config.grid.import_limit_kw)
       }
-      const savedDataset = localStorage.getItem('energy_lab_dataset_id')
+      const savedDataset = localStorage.getItem(storageKey('energy_lab_dataset_id'))
       if (found && savedDataset) {
         try {
           const meta = await api(`/v1/datasets/${savedDataset}`)
           if (meta.site_id === found.site_id && active) {
             setDataset(meta)
-            setScenarioLabel(localStorage.getItem('energy_lab_scenario_label') || 'Not selected')
+            setScenarioLabel(localStorage.getItem(storageKey('energy_lab_scenario_label')) || 'Not selected')
             const observed = await api(`/v1/datasets/${savedDataset}/observations`)
             if (active) setObservations(observed.records)
           }
         } catch {
-          localStorage.removeItem('energy_lab_dataset_id')
+          localStorage.removeItem(storageKey('energy_lab_dataset_id'))
         }
       }
     }).catch(() => { if (active) setApiOnline(false) })
     return () => { active = false }
-  }, [])
+  }, [session?.access_token])
+
+  useEffect(() => {
+    if (!site?.site_id) { setSavedDatasets([]); setSavedRuns([]); return }
+    let active = true
+    Promise.all([api(`/v1/sites/${site.site_id}/datasets`), api(`/v1/sites/${site.site_id}/runs`)])
+      .then(([datasets, runs]) => {
+        if (active) { setSavedDatasets(datasets.datasets); setSavedRuns(runs.runs) }
+      }).catch(() => { if (active) { setSavedDatasets([]); setSavedRuns([]) } })
+    return () => { active = false }
+  }, [site?.site_id, dataset?.dataset_id, latestRunId])
 
   useEffect(() => {
     const runId = latestRunId || optimization?.run_id || assessment?.run_id
@@ -200,15 +245,58 @@ export default function App() {
           min_power_kw: Number(assetForm.hvacMin), max_power_kw: Number(assetForm.hvacMax) }] : [],
       }
       const created = await post('/v1/sites', payload)
-      setSite(created); localStorage.setItem('energy_lab_site_id', created.site_id)
+      setSavedSites(items => [...items, created])
+      setSite(created); localStorage.setItem(storageKey('energy_lab_site_id'), created.site_id)
       setScenarioLimit(created.config.grid.import_limit_kw)
       setScenarioBatteryLimit('')
-      localStorage.removeItem('energy_lab_dataset_id')
-      localStorage.removeItem('energy_lab_scenario_label')
+      localStorage.removeItem(storageKey('energy_lab_dataset_id'))
+      localStorage.removeItem(storageKey('energy_lab_scenario_label'))
       setDataset(null); setQuality(null); setObservations([]); setAssessment(null); setDecisionBrief(null); setOptimization(null)
       setForecast(null); setForecastStudy(null); setRecommendation(null); setScenario(null); setStressOutcome(null); setMeasurementSensitivity(null); setReport(null); setLatestRunId(null); setLatestVisibleRunId(null)
       setScenarioLabel('Not selected')
       setTab('readiness')
+    })
+  }
+
+  function selectSite(selected) {
+    setUploadAuthorized(false)
+    setSite(selected); setDataset(null); setObservations([]); setQuality(null)
+    setAssessment(null); setOptimization(null); setForecast(null); setReport(null)
+    setLatestRunId(null); setLatestVisibleRunId(null); setSelectedSavedRun(null)
+    localStorage.setItem(storageKey('energy_lab_site_id'), selected.site_id)
+    localStorage.removeItem(storageKey('energy_lab_dataset_id'))
+    setScenarioLimit(selected.config.grid.import_limit_kw)
+    setTab('readiness')
+  }
+
+  async function selectDataset(selected) {
+    await run('Opening dataset', async () => {
+      const observed = await api(`/v1/datasets/${selected.dataset_id}/observations`)
+      setDataset(selected); setObservations(observed.records); setQuality(null)
+      setAssessment(null); setOptimization(null); setSelectedSavedRun(null)
+      setScenarioLabel(selected.synthetic ? 'Saved synthetic dataset' : 'Saved observed dataset')
+      localStorage.setItem(storageKey('energy_lab_dataset_id'), selected.dataset_id)
+    })
+  }
+
+  async function selectRun(selected) {
+    await run('Opening saved run', async () => {
+      const full = await api(`/v1/runs/${selected.run_id}`)
+      setSelectedSavedRun(full); setLatestRunId(full.run_id); setLatestVisibleRunId(full.run_id)
+      setTab('report')
+    })
+  }
+
+  async function deleteActiveSite() {
+    if (!site || !window.confirm(`Delete ${site.name} and all its datasets and runs? This cannot be undone.`)) return
+    await run('Deleting site', async () => {
+      await api(`/v1/sites/${site.site_id}`, { method: 'DELETE' })
+      setSavedSites(items => items.filter(item => item.site_id !== site.site_id))
+      setUploadAuthorized(false)
+      setSite(null); setDataset(null); setObservations([]); setQuality(null)
+      setAssessment(null); setOptimization(null); setSelectedSavedRun(null)
+      localStorage.removeItem(storageKey('energy_lab_site_id'))
+      localStorage.removeItem(storageKey('energy_lab_dataset_id'))
     })
   }
 
@@ -223,8 +311,8 @@ export default function App() {
       setForecast(null); setForecastStudy(null); setRecommendation(null); setScenario(null); setStressOutcome(null); setMeasurementSensitivity(null); setReport(null); setLatestRunId(null); setLatestVisibleRunId(null)
       const label = `${titleCase(datasetForm.weather)} PV / ${titleCase(datasetForm.load)} load`
       setScenarioLabel(label)
-      localStorage.setItem('energy_lab_scenario_label', label)
-      localStorage.setItem('energy_lab_dataset_id', created.dataset_id)
+      localStorage.setItem(storageKey('energy_lab_scenario_label'), label)
+      localStorage.setItem(storageKey('energy_lab_dataset_id'), created.dataset_id)
       const observed = await api(`/v1/datasets/${created.dataset_id}/observations`)
       setObservations(observed.records)
     })
@@ -241,8 +329,8 @@ export default function App() {
       setDataset(meta); setQuality(null); setAssessment(null); setDecisionBrief(null); setOptimization(null)
       setForecast(null); setForecastStudy(null); setRecommendation(null); setScenario(null); setStressOutcome(null); setMeasurementSensitivity(null); setReport(null); setLatestRunId(null); setLatestVisibleRunId(null)
       setScenarioLabel('Observed dataset')
-      localStorage.setItem('energy_lab_scenario_label', 'Observed dataset')
-      localStorage.setItem('energy_lab_dataset_id', created.dataset_id)
+      localStorage.setItem(storageKey('energy_lab_scenario_label'), 'Observed dataset')
+      localStorage.setItem(storageKey('energy_lab_dataset_id'), created.dataset_id)
       const observed = await api(`/v1/datasets/${created.dataset_id}/observations`)
       setObservations(observed.records)
     })
@@ -394,7 +482,8 @@ export default function App() {
     { name: 'Critical demand', color: '#baaa88', values: critical },
     { name: 'Fixed demand', color: '#80a7a2', values: fixed },
   ].filter(item => item.values.length)
-  const currentRun = forecastStudy?.run_id === latestRunId ? forecastStudy
+  const currentRun = selectedSavedRun?.run_id === latestRunId ? selectedSavedRun
+    : forecastStudy?.run_id === latestRunId ? forecastStudy
     : optimization?.run_id === latestRunId ? optimization
     : assessment?.run_id === latestRunId ? assessment : optimization || assessment
   const seriesQuality = quality?.quality?.series || []
@@ -416,7 +505,9 @@ export default function App() {
   const operationalPass = assessment?.passes?.find(item => item.mode === 'operational')
   const latestExperimentCases = experiment?.runs?.flatMap(run => run.results || []) || []
 
-  if (!showWorkspace) return <Landing onOpenWorkspace={openWorkspace} />
+  if (!workspaceEnabled || !showWorkspace) return <Landing onOpenWorkspace={workspaceEnabled ? openWorkspace : null} />
+  if (auth && authLoading) return <div className="auth-shell"><p>Checking your workspace…</p></div>
+  if (auth && !session) return <SignIn onBack={openSite} />
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -424,7 +515,7 @@ export default function App() {
       <div className="side-label">WORKSPACE / 01</div>
       <nav aria-label="Primary sections">{tabs.map(([id, label], index) => <button key={id}
         className={tab === id ? 'active' : ''} onClick={() => setTab(id)} aria-current={tab === id ? 'page' : undefined}><span className="nav-number">{String(index + 1).padStart(2, '0')}</span><span>{label}</span><b aria-hidden="true">↗</b></button>)}</nav>
-      <div className="sidebar-footer"><button className="footer-link" onClick={openSite}>Back to site <span>↗</span></button><button className={tab === 'settings' ? 'footer-link active' : 'footer-link'} onClick={() => setTab('settings')}>Settings <span>↗</span></button><div className="research-status"><span className="status-dot" /> Research status <strong>Advisory · local</strong><small>No equipment control</small></div></div>
+      <div className="sidebar-footer"><button className="footer-link" onClick={openSite}>Back to site <span>↗</span></button><button className={tab === 'settings' ? 'footer-link active' : 'footer-link'} onClick={() => setTab('settings')}>Settings <span>↗</span></button>{auth && <button className="footer-link" onClick={() => auth.auth.signOut()}>Sign out <span>↗</span></button>}<div className="research-status"><span className="status-dot" /> Research status <strong>Advisory · {auth ? 'private workspace' : 'local'}</strong><small>No equipment control</small></div></div>
     </aside>
     <main className="main">
       <header className="topbar"><div className="top-identity"><span className="eyebrow">GRIDYN <span className="crumb">/</span> RESEARCH PROTOTYPE</span><h1>{titles[tab] || 'Settings'}</h1><p>Understand your power to shift.</p></div>
@@ -447,8 +538,9 @@ export default function App() {
           {optimization && <Panel eyebrow="DECISION / ADVISORY" title="Research recommendation" aside={<button className="text-button" onClick={loadRecommendation} disabled={!!busy}>Refresh evidence ↗</button>}><p className="intro">Derived from an independently validated run. No controls are sent to equipment.</p>{recommendation ? <div className="detail-grid"><div><span>STATUS</span><strong>{titleCase(recommendation.status)}</strong></div><div><span>SIMULATED PEAK CHANGE</span><strong>{recommendation.simulated_peak_reduction_kw == null ? 'No result available' : `${fmt(recommendation.simulated_peak_reduction_kw)} kW`}</strong></div><div><span>RELIABILITY</span><strong>{titleCase(recommendation.reliability)}</strong></div></div> : <button className="secondary" onClick={loadRecommendation} disabled={!!busy}>Inspect recommendation</button>}</Panel>}
         </>}
         {tab === 'site' && <>
+          <Panel eyebrow="YOUR ACCOUNT" title="Saved sites"><p className="intro">Choose a site to continue its research, or define a new one below.</p><div className="saved-list">{savedSites.length ? savedSites.map(item => <button key={item.site_id} className={siteId === item.site_id ? 'saved-item active' : 'saved-item'} onClick={() => selectSite(item)}><strong>{item.name}</strong><span>{item.config.timezone} · {shortId(item.site_id)} ↗</span></button>) : <p className="subtle">No saved sites yet.</p>}</div>{site && <button className="text-button danger" onClick={deleteActiveSite}>Delete selected site and its data</button>}</Panel>
           <Panel eyebrow="01 / MODEL BOUNDARY" title="Define the site" aside={<span className="tag">Units are explicit</span>}>
-            <p className="intro">Create a local advisory model for one site. The project name is still provisional; this name labels your site only.</p>
+            <p className="intro">Create an advisory model for one site. This name labels your site only.</p>
             <form className="form-grid" onSubmit={createSite}>
               <label className="wide">Site name<input value={siteForm.name} onChange={e => setSiteForm({ ...siteForm, name: e.target.value })} required /></label>
               <label>Site timezone<input value={siteForm.timezone} onChange={e => setSiteForm({ ...siteForm, timezone: e.target.value })} required /></label>
@@ -475,6 +567,7 @@ export default function App() {
           {site && <Panel eyebrow="CURRENT SITE" title={site.name}><div className="metric-row"><Metric label="Import limit" value={fmt(site.config.grid.import_limit_kw, 0)} unit="kW" /><Metric label="PV capacity" value={fmt(site.config.pv.ac_capacity_kw, 0)} unit="kW" /><Metric label="Timezone" value={site.config.timezone} /></div></Panel>}
         </>}
         {tab === 'readiness' && <>
+          {site && <Panel eyebrow="YOUR ACCOUNT" title="Saved datasets"><p className="intro">Open a prior dataset for this site. Synthetic and observed sources stay separate.</p><div className="saved-list">{savedDatasets.length ? savedDatasets.map(item => <button key={item.dataset_id} className={datasetId === item.dataset_id ? 'saved-item active' : 'saved-item'} onClick={() => selectDataset(item)}><strong>{item.synthetic ? 'Synthetic study' : 'Observed CSV'}</strong><span>{item.interval_minutes} min · {shortId(item.dataset_id)} ↗</span></button>) : <p className="subtle">No saved datasets for this site.</p>}</div></Panel>}
           <Panel eyebrow="02 / EVIDENCE" title="Bring data into view" aside={<span className="tag">Claims are assessed separately</span>}>
             {!site ? <Notice>Create a site first.</Notice> : <><p className="intro">Generate clearly labeled synthetic truth and observations, or import your own timestamped CSV. CSV columns: <code>start,end,quantity,value,unit</code>.</p>
               <div className="split"><div className="subpanel"><h3>Generate a synthetic study</h3><div className="form-grid compact">
@@ -484,7 +577,7 @@ export default function App() {
                 <label>Weather<select value={datasetForm.weather} onChange={e => setDatasetForm({ ...datasetForm, weather: e.target.value })}><option value="clear">Clear</option><option value="cloudy">Cloudy</option><option value="monsoon_like">Monsoon-like</option></select></label>
                 <label>Load<select value={datasetForm.load} onChange={e => setDatasetForm({ ...datasetForm, load: e.target.value })}><option value="normal">Normal</option><option value="high_cooling">High cooling</option><option value="low_activity">Low activity</option></select></label>
                 <button className="primary" onClick={makeSynthetic} disabled={!!busy}>Generate dataset</button></div></div>
-                <div className="subpanel"><h3>Import observed CSV</h3><p>Readings are normalized to UTC and canonical kW/kWh before quality checks. Files remain in this local workspace.</p><label className="upload-resolution">Declared interval<select value={csvResolution} onChange={e => setCsvResolution(e.target.value)}><option value="15">15 min</option><option value="30">30 min</option><option value="60">60 min</option></select></label><label className="upload">Choose CSV<input type="file" accept=".csv,text/csv" onChange={uploadCsv} disabled={!!busy} /></label></div></div></>}
+                <div className="subpanel"><h3>Import observed CSV</h3><p>Readings are normalized to UTC and canonical kW/kWh before quality checks. In a hosted workspace, normalized records are saved to your private account. The CSV limit is 2 MB.</p><label className="upload-resolution">Declared interval<select value={csvResolution} onChange={e => setCsvResolution(e.target.value)}><option value="15">15 min</option><option value="30">30 min</option><option value="60">60 min</option></select></label><label className="check"><input type="checkbox" checked={uploadAuthorized} onChange={e => setUploadAuthorized(e.target.checked)} /> I am authorized to upload this site data for research analysis.</label><label className="upload">Choose CSV<input type="file" accept=".csv,text/csv" onChange={uploadCsv} disabled={!!busy || !uploadAuthorized} /></label></div></div></>}
           </Panel>
           {dataset && <Panel eyebrow="SELECTED DATASET" title={synthetic ? 'Synthetic research data' : 'Observed site data'}><div className="metric-row"><Metric label="Resolution" value={dataset.interval_minutes} unit="min" /><Metric label="Starts" value={dataset.start_utc?.slice(0, 16)} /><Metric label="Records" value={observations.length} /></div><div className="actions"><button className="primary" onClick={validateData} disabled={!!busy}>Assess readiness</button></div></Panel>}
           <Panel eyebrow="SIGNAL INVENTORY" title="What the model actually has" aside={<Status tone={dataset ? 'ok' : 'muted'}>{dataset ? `${sourceLabel(synthetic)} source` : 'No dataset'}</Status>}>
@@ -569,7 +662,8 @@ export default function App() {
         </Panel>}
         {tab === 'experiments' && <Panel eyebrow="UNCERTAINTY / EVIDENCE MATRIX" title="Response stress audit"><p className="intro">A fixed synthetic schedule is replayed across physical stresses in both directions and over 1, 2 and 4 hours. Paired observation runs and the public building-load forecast benchmark are reported separately. Infeasible and unevaluable cases remain visible.</p><button className="secondary" onClick={loadUncertaintyMatrix} disabled={!!busy}>View uncertainty matrix</button>{uncertaintyMatrix && <><div className="metric-row top-gap"><Metric label="Synthetic physical cases" value={uncertaintyMatrix.synthetic_physical.row_count} /><Metric label="Observation variants" value={uncertaintyMatrix.paired_observation.variant_count} /><Metric label="Observed-load held-out days" value={uncertaintyMatrix.public_observed_load.held_out_days} /><Metric label="Field reliability" value="Unknown" /></div><details className="top-gap"><summary>Inspect factors and outcomes</summary><div className="claim-list top-gap">{Object.entries(uncertaintyMatrix.synthetic_physical.by_factor).map(([factor, counts]) => <div className="claim" key={factor}><span className={`state ${counts.not_evaluable || counts.overstated ? 'insufficient' : 'usable_with_limitations'}`}>{counts.not_evaluable ? 'Unknown' : counts.overstated ? 'Overstated' : 'Synthetic'}</span><div><strong>{titleCase(factor)}</strong><p>Delivered: {counts.delivered || 0} · Overstated: {counts.overstated || 0} · Baseline infeasible: {counts.baseline_infeasible || 0} · Candidate infeasible: {counts.candidate_infeasible || 0} · Not evaluable: {counts.not_evaluable || 0}</p></div></div>)}</div></details><p className="footnote">Measured savings, thermal comfort, applicable tariff cost, field flexibility reliability and operator acceptance remain Unknown. Public load is from another building; no site-delivery claim is inferred.</p></>}</Panel>}
         {tab === 'report' && <>
-          <Panel eyebrow="10 / TRACEABLE EXPORT" title="Research report" aside={<Status tone={report?.synthetic ? 'synthetic' : 'muted'}>{report?.headline_label || 'No report'}</Status>}><p className="intro">Every computed metric is linked to a run, dataset, unit, and calculation. Missing analytical sections remain unavailable.</p>{!currentRun ? <Notice>Complete an assessment or optimization run first.</Notice> : <><div className="metric-row"><Metric label="Selected run" value={shortId(currentRun.run_id)} /><Metric label="Status" value={titleCase(currentRun.status)} /><Metric label="Source" value={report ? sourceLabel(report.synthetic) : 'Loading'} /></div><div className="actions"><a className="primary link-button" href={`/v1/reports/${currentRun.run_id}?format=markdown`} target="_blank" rel="noreferrer">Open Markdown report</a><a className="secondary link-button" href={`/v1/reports/${currentRun.run_id}?format=json`} target="_blank" rel="noreferrer">Open JSON</a></div></>}</Panel>
+          {site && <Panel eyebrow="YOUR ACCOUNT" title="Saved research runs"><p className="intro">Reopen a run to inspect its report and download its trace.</p><div className="saved-list">{savedRuns.length ? savedRuns.map(item => <button key={item.run_id} className={currentRun?.run_id === item.run_id ? 'saved-item active' : 'saved-item'} onClick={() => selectRun(item)}><strong>{titleCase(item.kind)}</strong><span>{titleCase(item.status)} · {shortId(item.run_id)} ↗</span></button>) : <p className="subtle">No saved runs for this site.</p>}</div></Panel>}
+          <Panel eyebrow="10 / TRACEABLE EXPORT" title="Research report" aside={<Status tone={report?.synthetic ? 'synthetic' : 'muted'}>{report?.headline_label || 'No report'}</Status>}><p className="intro">Every computed metric is linked to a run, dataset, unit, and calculation. Missing analytical sections remain unavailable.</p>{!currentRun ? <Notice>Complete an assessment or optimization run first.</Notice> : <><div className="metric-row"><Metric label="Selected run" value={shortId(currentRun.run_id)} /><Metric label="Status" value={titleCase(currentRun.status)} /><Metric label="Source" value={report ? sourceLabel(report.synthetic) : 'Loading'} /></div><div className="actions"><button className="primary link-button" onClick={() => run('Downloading report', () => downloadReport(`/v1/reports/${currentRun.run_id}?format=markdown`, `gridyn-${currentRun.run_id}.md`))}>Download Markdown report</button><button className="secondary link-button" onClick={() => run('Downloading report', () => downloadReport(`/v1/reports/${currentRun.run_id}?format=json`, `gridyn-${currentRun.run_id}.json`))}>Download JSON</button></div></>}</Panel>
           {currentRun && <div className="report-grid">
             <Panel eyebrow="RESEARCH QUESTION" title="What can this site credibly provide?"><p className="report-copy">Estimate a feasible sustained grid response from declared assets and data, while exposing evidence gaps and uncertainty.</p></Panel>
             <Panel eyebrow="DATASET / READINESS" title="Evidence boundary"><div className="report-facts"><EvidenceRow label="Dataset" detail={report?.dataset_id || datasetId || 'Unavailable'} status={report ? sourceLabel(report.synthetic) : 'Unknown'} tone={report?.synthetic ? 'synthetic' : 'muted'} /><EvidenceRow label="Readiness" detail={quality ? `${qualityClaims.length} claim-specific assessments` : 'Assessment not run'} status={quality ? 'Assessed' : 'Unknown'} tone={quality ? 'ok' : 'muted'} /></div></Panel>
@@ -584,7 +678,7 @@ export default function App() {
             <Panel eyebrow="TRACE / REPLAY" title="Reproducibility"><div className="report-facts"><EvidenceRow label="Run ID" detail={currentRun.run_id} status={titleCase(currentRun.status)} /><EvidenceRow label="Dataset hash" detail={report?.dataset_hashes?.[datasetId]?.slice(0, 24) || 'Unknown'} status={report ? 'Recorded' : 'Unknown'} tone={report ? 'ok' : 'muted'} /><EvidenceRow label="Canonical model" detail={report?.canonical_model_version || 'Unknown'} status={report ? 'Recorded' : 'Unknown'} tone={report ? 'ok' : 'muted'} /></div></Panel>
           </div>}
         </>}
-        {tab === 'settings' && <Panel eyebrow="WORKSPACE / SETTINGS" title="Local research configuration"><div className="detail-grid"><div><span>SERVICE</span><strong>{apiOnline ? 'Connected to local API' : 'Unavailable'}</strong></div><div><span>ACTIVE SITE</span><strong>{site?.name || 'Not configured'}</strong></div><div><span>DATA SOURCE</span><strong>{dataset ? sourceLabel(synthetic) : 'None selected'}</strong></div></div><p className="footnote">This prototype stores metadata in the local service. It does not control equipment or connect to live utility systems.</p></Panel>}
+        {tab === 'settings' && <Panel eyebrow="WORKSPACE / SETTINGS" title="Research configuration"><div className="detail-grid"><div><span>SERVICE</span><strong>{apiOnline ? 'Connected to research API' : 'Unavailable'}</strong></div><div><span>ACTIVE SITE</span><strong>{site?.name || 'Not configured'}</strong></div><div><span>DATA SOURCE</span><strong>{dataset ? sourceLabel(synthetic) : 'None selected'}</strong></div></div><p className="footnote">{auth ? 'Your workspace records are scoped to your account. ' : 'This local prototype stores metadata on this computer. '}Gridyn does not control equipment or connect to live utility systems.</p></Panel>}
       </div>
     </main>
   </div>

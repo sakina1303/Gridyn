@@ -5,15 +5,18 @@ from __future__ import annotations
 import os
 import json
 import uuid
+from tempfile import TemporaryDirectory
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from energy_lab.advisory.decision import build_decision_brief
 from energy_lab.core.time import make_intervals
@@ -23,6 +26,7 @@ from energy_lab.data.readiness import assess_readiness
 from energy_lab.data.serde import (record_from_dict, record_to_dict, schedule_from_dict, schedule_to_dict,
                                    site_from_dict, site_to_dict, truth_from_dict, truth_to_dict)
 from energy_lab.db.store import LocalStore
+from energy_lab.db.hosted import HostedStore, HostedStoreError, access_token
 from energy_lab.experiments.runner import load_spec, run_experiment
 from energy_lab.experiments.forecast_value import compare_forecast_decisions
 from energy_lab.experiments.measurement_sensitivity import assess_measurement_sensitivity
@@ -53,10 +57,61 @@ def _error(code: str, message: str, status: int = 422, *, field: str | None = No
     return HTTPException(status_code=status, detail={"code": code, "message": message, "field": field, "run_id": None})
 
 
+def _resource_root() -> Path:
+    candidates = (Path(os.environ.get("GRIDYN_RESOURCE_ROOT", ".")), Path.cwd(),
+                  Path(__file__).resolve().parents[4])
+    for candidate in candidates:
+        if (candidate / "configs").is_dir():
+            return candidate
+    raise RuntimeError("Gridyn configuration files are unavailable")
+
+
 def create_app(db_path: Path | None = None) -> FastAPI:
-    path = db_path or Path(os.environ.get("ENERGY_LAB_DB_PATH", ".local/energy_lab.sqlite3"))
-    store = LocalStore(path)
+    hosted_url = os.environ.get("GRIDYN_SUPABASE_URL") if db_path is None else None
+    hosted_key = os.environ.get("GRIDYN_SUPABASE_PUBLISHABLE_KEY")
+    if os.environ.get("VERCEL") and not hosted_url:
+        raise RuntimeError("GRIDYN_SUPABASE_URL is required on Vercel; local SQLite is not durable")
+    if hosted_url and not hosted_key:
+        raise RuntimeError("GRIDYN_SUPABASE_PUBLISHABLE_KEY is required for hosted mode")
+    store = (HostedStore(hosted_url, hosted_key) if hosted_url else
+             LocalStore(db_path or Path(os.environ.get("ENERGY_LAB_DB_PATH", ".local/energy_lab.sqlite3"))))
     app = FastAPI(title="Energy Lab advisory API", version="0.1.0")
+
+    @app.middleware("http")
+    async def workspace_auth(request: Request, call_next):
+        if not hosted_url or not request.url.path.startswith("/v1/") or request.url.path in {
+            "/v1/health", "/v1/public-benchmarks/iblend-academic",
+            "/v1/public-benchmarks/etsit-building-c", "/v1/uncertainty-matrix",
+        }:
+            return await call_next(request)
+        scheme, _, token = request.headers.get("authorization", "").partition(" ")
+        if scheme.lower() != "bearer" or not token:
+            return JSONResponse(status_code=401, content={"detail": {"code": "authentication_required",
+                "message": "Sign in to use the research workspace."}})
+        try:
+            verified = await run_in_threadpool(store.authenticate, token)
+        except HostedStoreError:
+            return JSONResponse(status_code=503, content={"detail": {"code": "authentication_unavailable",
+                "message": "Sign-in verification is temporarily unavailable. Please retry."}})
+        if not verified:
+            return JSONResponse(status_code=401, content={"detail": {"code": "authentication_required",
+                "message": "Sign in to use the research workspace."}})
+        context = access_token.set(token)
+        try:
+            return await call_next(request)
+        finally:
+            access_token.reset(context)
+
+    @app.exception_handler(HostedStoreError)
+    async def hosted_storage_error(request, exc):
+        return JSONResponse(status_code=502, content={"detail": {"code": "storage_unavailable",
+            "message": "The workspace could not reach its private storage. Please retry."}})
+
+    frontend_origin = os.environ.get("GRIDYN_FRONTEND_ORIGIN")
+    if frontend_origin:
+        app.add_middleware(CORSMiddleware, allow_origins=[frontend_origin],
+                           allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+                           allow_headers=["Authorization", "Content-Type"])
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, exc):
@@ -85,17 +140,17 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
     @app.get("/v1/public-benchmarks/iblend-academic")
     def get_public_iblend_benchmark():
-        path = Path(__file__).resolve().parents[4] / "configs" / "public_benchmarks" / "iblend_academic_summary.json"
+        path = _resource_root() / "configs" / "public_benchmarks" / "iblend_academic_summary.json"
         return json.loads(path.read_text(encoding="utf-8"))
 
     @app.get("/v1/public-benchmarks/etsit-building-c")
     def get_public_etsit_benchmark():
-        path = Path(__file__).resolve().parents[4] / "configs" / "public_benchmarks" / "etsit_paired_summary.json"
+        path = _resource_root() / "configs" / "public_benchmarks" / "etsit_paired_summary.json"
         return json.loads(path.read_text(encoding="utf-8"))
 
     @app.get("/v1/uncertainty-matrix")
     def get_uncertainty_matrix():
-        path = Path(__file__).resolve().parents[4] / "configs" / "uncertainty_matrix_summary.json"
+        path = _resource_root() / "configs" / "uncertainty_matrix_summary.json"
         return json.loads(path.read_text(encoding="utf-8"))
 
     @app.post("/v1/sites", status_code=201)
@@ -119,6 +174,34 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     @app.get("/v1/sites/{site_id}")
     def get_site(site_id: str):
         return stored("site", site_id)
+
+    @app.delete("/v1/sites/{site_id}", status_code=204)
+    def delete_site(site_id: str):
+        stored("site", site_id)
+        datasets = tuple(item for item in store.list("dataset") if item["site_id"] == site_id)
+        dataset_ids = {item["dataset_id"] for item in datasets}
+        for kind, id_field in (("run", "run_id"), ("scenario", "scenario_id"),
+                               ("quality_report", "quality_report_id"), ("forecast", "forecast_id")):
+            for item in store.list(kind):
+                if item.get("site_id") == site_id or item.get("dataset_id") in dataset_ids:
+                    store.delete(kind, item[id_field])
+        for item in datasets:
+            store.delete("dataset", item["dataset_id"])
+        store.delete("site", site_id)
+
+    @app.get("/v1/sites/{site_id}/datasets")
+    def list_site_datasets(site_id: str):
+        stored("site", site_id)
+        datasets = tuple({key: value for key, value in item.items() if key not in {"truth", "records"}}
+                         for item in store.list("dataset") if item["site_id"] == site_id)
+        return {"schema_version": "1", "datasets": datasets}
+
+    @app.get("/v1/sites/{site_id}/runs")
+    def list_site_runs(site_id: str):
+        stored("site", site_id)
+        runs = tuple({key: item.get(key) for key in ("run_id", "kind", "dataset_id", "status", "synthetic")}
+                     for item in store.list("run") if item["site_id"] == site_id)
+        return {"schema_version": "1", "runs": runs}
 
     @app.post("/v1/sites/{site_id}/synthetic-datasets", status_code=201)
     def create_synthetic(site_id: str, body: SyntheticCreate):
@@ -152,7 +235,10 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         site = site_for(site_id)
         dataset_id = _new_id()
         try:
-            contents = (await file.read()).decode("utf-8")
+            raw = await file.read(2_000_001)
+            if len(raw) > 2_000_000:
+                raise _error("file_too_large", "CSV must be 2 MB or smaller", 413, field="file")
+            contents = raw.decode("utf-8")
             imported = ingest_csv_text(contents, dataset_id=dataset_id, site_timezone=site.timezone)
         except (UnicodeError, DataIngestionError, ValueError) as exc:
             raise _error("invalid_dataset", str(exc), field="file") from exc
@@ -443,7 +529,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         safe_id = Path(body.protocol_id).name
         if safe_id != body.protocol_id or not safe_id.endswith(".json"):
             raise _error("invalid_protocol", "protocol_id must name a checked-in JSON protocol")
-        project_root = Path(__file__).resolve().parents[4]
+        project_root = _resource_root()
         spec_path = project_root / "configs" / "experiments" / safe_id
         if not spec_path.exists():
             raise _error("protocol_not_found", "checked-in protocol not found", 404)
@@ -451,7 +537,11 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             spec = load_spec(spec_path)
             spec = type(spec)(**{**asdict(spec), "seeds": tuple(body.seed_set),
                                  "observation_variants": spec.observation_variants})
-            runs = run_experiment(spec, project_root / ".local" / "experiments")
+            if hosted_url:
+                with TemporaryDirectory(prefix="gridyn-experiment-") as temporary:
+                    runs = run_experiment(spec, Path(temporary))
+            else:
+                runs = run_experiment(spec, project_root / ".local" / "experiments")
         except ValueError as exc:
             raise _error("experiment_invalid", str(exc)) from exc
         experiment_id = _new_id()
