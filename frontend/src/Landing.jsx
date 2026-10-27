@@ -40,6 +40,63 @@ const researchAreas = [
   ['09', 'Research report', 'Keep methods, provenance, failures, limitations, and next measurements in one trace.'],
 ]
 
+const researchDetails = [
+  {
+    title: 'Site setup', state: 'Configuration available in the research code',
+    question: 'What can the site physically do?',
+    inputs: 'Site timezone; grid import and export limits; PV capacity; battery capacity, power, efficiency and SOC; EV, pump and HVAC service windows.',
+    result: 'A typed site model with explicit kW, kWh and 15-minute intervals. The public site has no configured real site.',
+  },
+  {
+    title: 'Data readiness', state: 'Dataset dependent',
+    question: 'Which claims does the available data support?',
+    inputs: 'Timestamped load, PV, battery SOC, EV, pump, HVAC and tariff signals, with source and missingness recorded.',
+    result: 'Claim-specific readiness and observed, synthetic, inferred or unknown provenance. No real-site dataset is connected to this website.',
+  },
+  {
+    title: 'Energy overview', state: 'No public site run',
+    question: 'What is happening inside the declared boundary?',
+    inputs: 'A site model, dataset and completed simulation run.',
+    result: 'Baseline, asset inventory, grid flows, physical balance and run status. Numerical site results remain unavailable here.',
+  },
+  {
+    title: 'Flexibility', state: 'Synthetic research implemented',
+    question: 'How much can demand move, in which direction, and for how long?',
+    inputs: 'Baseline, response window, asset limits, service needs and recovery period.',
+    result: 'Separate upward and downward envelopes with duration, recovery and feasibility. No single flexibility score or field claim.',
+  },
+  {
+    title: 'Forecasts', state: 'Synthetic and public-data checks',
+    question: 'How well can the next load and PV intervals be anticipated?',
+    inputs: 'Historical observations, issue time, held-out future and a declared method.',
+    result: 'Method comparison with error and availability states. Public-data checks are separate from site-specific validation.',
+  },
+  {
+    title: 'Optimization', state: 'Candidate schedules require replay',
+    question: 'Can a proposed schedule meet an objective without breaking constraints?',
+    inputs: 'Objective, forecasts, grid limits, asset limits and service requirements.',
+    result: 'Solver status, schedule, feasibility and independent physical validation. A failed run is reported as a failure.',
+  },
+  {
+    title: 'Scenario lab', state: 'Synthetic comparison',
+    question: 'How do decisions change under stress?',
+    inputs: 'No action, rule-based, optimization and uncertainty-aware candidates under declared demand, PV and data scenarios.',
+    result: 'Side-by-side outcomes and failure states. The site does not claim operational performance from synthetic scenarios.',
+  },
+  {
+    title: 'Experiments', state: 'Reproducible research',
+    question: 'Does the method hold up across repeatable tests?',
+    inputs: 'Fixed seeds, protocols, synthetic disturbances and separately sourced public benchmark data.',
+    result: 'Per-case outcomes, provenance and failed cases. Observed public data supports forecasting checks, not measured site flexibility.',
+  },
+  {
+    title: 'Research report', state: 'Generated after a research run',
+    question: 'What can be stated and reproduced?',
+    inputs: 'Run ID, dataset ID, methods, validated outputs and limitations.',
+    result: 'Traceable metrics, evidence labels, failures, next measurements and reproducibility information. No report is fabricated for this website.',
+  },
+]
+
 function Mark({ light = false }) {
   return <span className={`landing-mark${light ? ' light' : ''}`} aria-hidden="true"><i /><i /><i /></span>
 }
@@ -69,7 +126,9 @@ function JourneyVisual({ step }) {
 
 export default function Landing() {
   const [step, setStep] = useState(0)
+  const [researchArea, setResearchArea] = useState(0)
   const current = chapters[step]
+  const selectedResearch = researchDetails[researchArea]
 
   return <div className="landing">
     <div className="landing-banner">SIMULATION-FIRST RESEARCH PROTOTYPE <span>·</span> NO PHYSICAL CONTROL</div>
@@ -80,7 +139,7 @@ export default function Landing() {
       </section>
       <section id="approach" className="landing-approach"><div className="section-side"><span className="section-index">01 / THE QUESTION</span><p>From site physics to a claim you can inspect.</p></div><div className="section-main"><h2>How much can a site shift, <em>for how long,</em> and with what evidence?</h2><p>Gridyn is a simulation-first advisory prototype. It brings site constraints, data quality, sustained response, and schedule validation into one research path. It reports unknowns as unknowns.</p><div className="approach-columns"><div><span>01 / INPUT</span><h3>Declare the site</h3><p>Grid, PV, battery, EV, pump, and HVAC constraints define the model boundary.</p></div><div><span>02 / EVIDENCE</span><h3>Inspect the data</h3><p>Readiness is evaluated by claim, with resolution, coverage, and missing signals visible.</p></div><div><span>03 / RESULT</span><h3>Replay the answer</h3><p>Candidate schedules are checked against physical balance and service constraints.</p></div></div></div></section>
       <section id="experience" className="landing-experience"><div className="experience-head"><div><span className="section-index">02 / PRODUCT JOURNEY</span><h2>Follow the question through.</h2></div><p>Move through four steps to see how the prototype turns a declared site into a traceable research result.</p></div><div className="journey-shell"><div className="journey-top"><span>INTERACTIVE OVERVIEW</span><span>{current.number} / 04</span></div><div className="journey-progress" aria-hidden="true"><span style={{ width: `${(step + 1) * 25}%` }} /></div><div className="journey-body" role="tabpanel" id="journey-panel" aria-label={current.label}><div className="journey-story"><span className="journey-num">{current.number}</span><p className="journey-label">{current.label}</p><h3>{current.title}</h3><p className="journey-copy">{current.copy}</p><div className="journey-meta"><div><span>THE QUESTION</span><strong>{current.question}</strong></div><div><span>THE OUTPUT</span><strong>{current.output}</strong></div></div></div><JourneyVisual step={step} /></div><div className="journey-bottom"><div className="journey-dots" role="tablist" aria-label="Journey stages">{chapters.map((chapter, index) => <button key={chapter.number} className={step === index ? 'active' : ''} role="tab" aria-controls="journey-panel" aria-selected={step === index} aria-label={`${chapter.number} ${chapter.label}`} onClick={() => setStep(index)}>{chapter.number}</button>)}</div><div className="journey-controls"><button onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0}>← Previous</button>{step < chapters.length - 1 ? <button className="next" onClick={() => setStep(step + 1)}>Next step →</button> : <a className="next" href="#capabilities">Research areas ↗</a>}</div></div></div><p className="experience-note">Illustrative journey. No site data or numerical result is shown here.</p></section>
-      <section id="capabilities" className="landing-capabilities"><div className="capabilities-intro"><span className="section-index">03 / WHAT THE RESEARCH COVERS</span><h2>A complete view of the site, without a made-up score.</h2><p>The underlying research code keeps each question separate. This public website explains the work; it does not display fabricated site results or operate equipment.</p></div><div className="capability-list">{researchAreas.map(([number, title, description]) => <div className="capability-item" key={number}><span>{number}</span><h3>{title}</h3><p>{description}</p></div>)}</div></section>
+      <section id="capabilities" className="landing-capabilities"><div className="capabilities-intro"><span className="section-index">03 / WHAT THE RESEARCH COVERS</span><h2>A complete view of the site, without a made-up score.</h2><p>The underlying research code keeps each question separate. Explore every area below to see its inputs, outputs, and current evidence state.</p></div><div className="capability-list">{researchAreas.map(([number, title, description], index) => <button className={`capability-item${researchArea === index ? ' selected' : ''}`} key={number} onClick={() => setResearchArea(index)} aria-pressed={researchArea === index} aria-controls="research-detail"><span>{number}</span><h3>{title}</h3><p>{description}</p><small>Explore area ↗</small></button>)}</div><div className="research-detail" id="research-detail" aria-live="polite"><div className="research-detail-heading"><span>IN THE RESEARCH WORKSPACE / {String(researchArea + 1).padStart(2, '0')}</span><strong>{selectedResearch.state}</strong></div><div className="research-detail-body"><div><h3>{selectedResearch.title}</h3><p>{selectedResearch.question}</p></div><div><span>WHAT IT NEEDS</span><p>{selectedResearch.inputs}</p><span>WHAT IT SHOWS</span><p>{selectedResearch.result}</p></div></div></div></section>
       <section id="research" className="landing-research"><div className="research-copy"><span className="section-index">04 / EVIDENCE AND LIMITS</span><h2>Built to show the limits of the answer.</h2><p>The research prototype runs synthetic site studies and checks observed public data for forecasting. Site-specific field validation has not happened yet.</p><p>It does not control equipment. Synthetic outcomes do not establish measured savings, grid benefit, or field reliability.</p><a className="landing-primary" href="https://github.com/sakina1303/Gridyn" target="_blank" rel="noreferrer">View the research code <span>↗</span></a></div><div className="research-ledger" aria-label="Research evidence"><div><span>SYNTHETIC / MODELLED</span><strong>Site simulation · flexibility envelope · schedule replay</strong></div><div><span>OBSERVED / EXTERNAL</span><strong><a href="https://springernature.figshare.com/articles/dataset/Energy_dataset_of_IIITD/6007637" target="_blank" rel="noreferrer">IIIT Delhi load ↗</a> · <a href="https://zenodo.org/records/19006030" target="_blank" rel="noreferrer">ETSIT load and PV ↗</a> forecast checks</strong></div><div><span>UNKNOWN / FIELD</span><strong>Delivered flexibility · measured savings · reliability · operator acceptance</strong></div><div><span>OUT OF SCOPE</span><strong>Live control · market bidding · utility integration</strong></div></div></section>
     </main><footer className="landing-footer"><a className="landing-logo" href="#top" aria-label="Gridyn, back to top"><Mark light /><strong>GRIDYN</strong></a><p>Understand your power to shift.</p><a href="#top">Back to top ↑</a></footer>
   </div>
